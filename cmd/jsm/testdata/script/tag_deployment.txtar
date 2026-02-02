@@ -1,0 +1,26 @@
+# Setup: Create a git repo
+exec git init
+exec git config user.email test@example.com
+exec git config user.name test
+exec git commit --allow-empty -m "initial"
+
+# Create a registry config
+mkdir registry
+cp config.yml registry/json-schema-manager-config.yml
+env JSM_ROOT_DIRECTORY=registry
+
+# Run jsm tag-deployment (should succeed locally even if push fails)
+exec jsm tag-deployment production
+stdout 'Tag created locally but failed to push: jsm-deploy/production/'
+
+# Verify the tag exists
+# We can't use the exact name easily, but we can list tags
+exec git tag
+stdout 'jsm-deploy/production/'
+
+-- config.yml --
+environments:
+  production:
+    privateUrlRoot: "https://json-schemas.internal.myorg.io/"
+    publicUrlRoot: "https://json-schemas.myorg.io/"
+    isProduction: true

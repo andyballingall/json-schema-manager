@@ -1,0 +1,36 @@
+# Public Schema Registry Configuration
+
+# ENVIRONMENT CONFIGURATION
+#
+# This section defines properties relating to the publication of schemas to an environment.
+# The private URL root will be used unless a schema contains the following property/value:
+# "x-public": true
+
+# Example:
+# - There are 3 environments: dev, uat and prod
+# - The dev environment allows developers to make changes to previously published
+#   schemas to the dev environment. (uat and prod do not allow this).
+# - The prod environment does not mention the environment name in the URL.
+#
+# The default JSON Schema version to use when creating new schemas.
+# Supported versions:
+# - http://json-schema.org/draft-04/schema#
+# - http://json-schema.org/draft-06/schema#
+# - http://json-schema.org/draft-07/schema# (Default)
+# - http://json-schema.org/draft/2019-09/schema
+# - http://json-schema.org/draft/2020-12/schema
+defaultJsonSchemaVersion: "http://json-schema.org/draft-07/schema#"
+
+# The environments which JSON Schemas will be published to:
+environments:
+  dev:
+    privateUrlRoot: "https://dev.json-schemas.internal.example.com/"
+    publicUrlRoot: "https://dev.json-schemas.example.com/"
+    allowSchemaMutation: true
+  uat:
+    privateUrlRoot: "https://uat.json-schemas.internal.example.com/"
+    publicUrlRoot: "https://uat.json-schemas.example.com/"
+  prod:
+    privateUrlRoot: "https://json-schemas.internal.example.com/"
+    publicUrlRoot: "https://json-schemas.example.com/"
+    isProduction: true

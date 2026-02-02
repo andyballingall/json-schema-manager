@@ -1,0 +1,122 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters-settings:
+  govet:
+    # ENABLE-ALL ensures standard checks (printf, atomic, etc.) are active.
+    enable-all: true
+    disable:
+      - fieldalignment
+    settings:
+      shadow:
+        strict: true
+
+  gocyclo:
+    min-complexity: 15
+
+  misspell:
+    locale: UK
+
+  lll:
+    line-length: 120
+
+  goimports:
+    local-prefixes: github.com/andyballingall/json-schema-manager
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+      - experimental
+      - opinionated
+    disabled-checks:
+      - dupImport
+      - whyNoLint
+      - wrapperFunc
+
+  nolintlint:
+    allow-unused: false
+    require-explanation: true
+    require-specific: true
+
+  testifylint:
+    enable-all: true
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  tagliatelle:
+    case:
+      use-camel-case: true
+      rules:
+        json: camel
+        yaml: camel
+
+  gocognit:
+    min-complexity: 20
+
+  godot:
+    scope: declarations
+    capital: true
+
+linters:
+  disable-all: true
+  enable:
+    # Basics
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - typecheck
+
+    # Formatting & Style
+    - gofumpt
+    - goimports
+    - revive
+    - misspell
+    - lll
+    - whitespace
+    - goconst
+
+    # Complexity & Quality
+    - gocritic
+    - gocyclo
+    - unconvert
+    - prealloc
+    - nakedret
+    - dogsled
+    - errorlint
+    - nilerr
+    - copyloopvar
+    - unparam
+
+    # Security & Resources
+    - gosec
+    - bodyclose
+    - noctx
+
+    # Testing & Maintenance
+    - testifylint
+    - thelper
+    - nolintlint
+
+    # NEW: Quality & Safety
+    - tagliatelle
+    - errname
+    - forcetypeassert
+    - makezero
+    - gocognit
+    - godot
+    - paralleltest
+    - tparallel
+    - usestdlibvars
+    - dupl
+    - wastedassign
+
+severity:
+  default: error

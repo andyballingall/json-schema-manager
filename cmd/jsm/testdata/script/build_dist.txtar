@@ -1,0 +1,54 @@
+# Setup: Create a git repo
+exec git init
+exec git config user.email test@example.com
+exec git config user.name test
+exec git commit --allow-empty -m "initial"
+
+# Create a registry config
+mkdir registry
+cp config.yml registry/json-schema-manager-config.yml
+env JSM_ROOT_DIRECTORY=registry
+
+# Create a schema
+mkdir registry/domain/person/1/0/0
+cp schema.json registry/domain/person/1/0/0/domain_person_1_0_0.schema.json
+
+# Run jsm build-dist --all (should work without tags/history)
+exec jsm build-dist production --all
+stdout 'Successfully built 1 schemas to'
+exists dist/production/private/domain_person_1_0_0.schema.json
+
+# Tag it to establish a baseline for non-all runs
+exec git add .
+exec git commit -m add_schema
+exec jsm tag-deployment production
+
+# Run jsm build-dist production (should return "No schemas to build" as nothing changed)
+exec jsm build-dist production
+stdout 'No schemas to build'
+
+# Add another schema
+mkdir registry/domain/address/1/0/0
+cp schema.json registry/domain/address/1/0/0/domain_address_1_0_0.schema.json
+
+# Run jsm build-dist production (should build the new schema)
+exec git add .
+exec jsm build-dist production
+stdout 'Successfully built 1 schemas to'
+exists dist/production/private/domain_address_1_0_0.schema.json
+
+-- config.yml --
+environments:
+  production:
+    privateUrlRoot: "https://json-schemas.internal.myorg.io/"
+    publicUrlRoot: "https://json-schemas.myorg.io/"
+    isProduction: true
+
+-- schema.json --
+{
+  "$id": "https://example.com/schema.json",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}
