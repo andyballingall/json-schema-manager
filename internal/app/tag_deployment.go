@@ -1,0 +1,29 @@
+package app
+
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/andyballingall/json-schema-manager/internal/config"
+)
+
+func NewTagDeploymentCmd(mgr Manager) *cobra.Command {
+	var env string
+
+	cmd := &cobra.Command{
+		Use:   "tag-deployment [environment]",
+		Short: "Record a successful deployment by creating a JSM deployment tag",
+		Long: `
+Create and push an environment-specific git tag to mark a successful deployment of schemas. 
+This tag will be used as the anchor for future 'check-changes' runs to verify that 
+already-deployed schemas are not modified in environments where mutations are forbidden.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				env = args[0]
+			}
+			return mgr.TagDeployment(cmd.Context(), config.Env(env))
+		},
+	}
+
+	return cmd
+}

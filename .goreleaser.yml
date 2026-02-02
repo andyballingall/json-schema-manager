@@ -1,0 +1,70 @@
+version: 2
+project_name: jsm
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    main: ./cmd/jsm/main.go
+    ldflags:
+      - -s -w -X github.com/andyballingall/json-schema-manager/internal/cmd.Version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    # this name template makes the search and replace of the binary name
+    # in the archive easier if you use something like goreleaser
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: git
+  groups:
+    - title: "🚀 Features"
+      regexp: '^feat\(jsm\)!?:'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^fix\(jsm\)!?:'
+      order: 1
+  filters:
+    include:
+      - '^(feat|fix)\(jsm\)!?:'
+
+homebrew_casks:
+  - name: jsm
+    repository:
+      owner: andyballingall
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/andyballingall/json-schema-manager"
+    description: "JSON Schema Manager (jsm) - Registry-first tool for managing and validating JSON schemas."
+    binaries:
+      - jsm
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/jsm"]
+          end

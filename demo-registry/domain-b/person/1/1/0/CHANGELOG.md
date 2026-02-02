@@ -1,0 +1,1 @@
+1. Adds location property   

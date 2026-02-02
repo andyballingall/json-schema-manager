@@ -1,0 +1,48 @@
+{
+  "editor.rulers": [
+    120
+  ],
+  // Enable format on save
+  "editor.formatOnSave": true,
+  "editor.detectIndentation": false,
+  // Go-specific settings
+  "[go]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  // Use goimports with local prefixes for import organization
+  "go.useLanguageServer": true,
+  "gopls": {
+    "formatting.gofumpt": true,
+    "formatting.local": "github.com/andyballingall/json-schema-manager"
+  },
+  "makefile.configureOnOpen": false,
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.formatOnSave": true
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.formatOnSave": true
+  },
+  "yaml.schemas": {
+    "https://golangci-lint.run/jsonschema/golangci.jsonschema.json": ".golangci.yml"
+  },
+  "yaml.format.enable": true,
+  "yaml.validate": true,
+  "yaml.hover": true,
+  "yaml.completion": true,
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "editor.formatOnSave": true,
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "editor.autoIndent": "advanced"
+  }
+}

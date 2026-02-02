@@ -1,0 +1,30 @@
+# Setup: Create a git repo
+exec git init
+exec git config user.email test@example.com
+exec git config user.name test
+
+# Create a registry config
+mkdir registry
+cp config.yml registry/json-schema-manager-config.yml
+exec git add .
+exec git commit -m "init"
+
+env JSM_ROOT_DIRECTORY=registry
+
+# Error: Invalid environment
+! exec jsm check-changes non-existent
+stderr 'does not define environment'
+
+# Error: git history error (running from outside repo)
+env JSM_ROOT_DIRECTORY=$WORK/registry
+mkdir $WORK/../outside
+cd $WORK/../outside
+! exec jsm check-changes production
+stderr 'could not find git history'
+
+-- config.yml --
+environments:
+  production:
+    privateUrlRoot: "https://p"
+    publicUrlRoot: "https://p"
+    isProduction: true

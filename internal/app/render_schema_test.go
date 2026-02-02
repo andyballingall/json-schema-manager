@@ -1,0 +1,140 @@
+package app
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/schema"
+)
+
+func TestNewRenderSchemaCmd(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	// Create a dummy config file so Initialise doesn't fail
+	configPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(simpleTestConfig), 0o600))
+
+	reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{})
+	require.NoError(t, rErr)
+
+	familyDir := filepath.Join(tmpDir, "domain", "family")
+	versionDir := filepath.Join(familyDir, "1", "0", "0")
+	require.NoError(t, os.MkdirAll(versionDir, 0o755))
+	schemaFile := filepath.Join(versionDir, "domain_family_1_0_0.schema.json")
+	require.NoError(t, os.WriteFile(schemaFile, []byte("{}"), 0o600))
+
+	baseKey := schema.Key("domain_family_1_0_0")
+	renderedBytes := []byte(`{"type": "object"}`)
+
+	tests := []struct {
+		name        string
+		args        []string
+		setupMock   func(m *MockManager)
+		wantErr     bool
+		wantErrType interface{}
+		wantOutput  string
+	}{
+		{
+			name: "Render by positional key",
+			args: []string{"domain_family_1_0_0"},
+			setupMock: func(m *MockManager) {
+				m.On("RenderSchema", mock.Anything, mock.MatchedBy(func(rt schema.ResolvedTarget) bool {
+					return *rt.Key == baseKey
+				}), config.Env("")).Return(renderedBytes, nil)
+			},
+			wantOutput: string(renderedBytes),
+		},
+		{
+			name: "Render by flag -k and --env",
+			args: []string{"-k", "domain_family_1_0_0", "--env", "prod"},
+			setupMock: func(m *MockManager) {
+				m.On("RenderSchema", mock.Anything, mock.MatchedBy(func(rt schema.ResolvedTarget) bool {
+					return *rt.Key == baseKey
+				}), config.Env("prod")).Return(renderedBytes, nil)
+			},
+			wantOutput: string(renderedBytes),
+		},
+		{
+			name: "Render by flag -i",
+			args: []string{"-i", "https://p/domain_family_1_0_0.schema.json"},
+			setupMock: func(m *MockManager) {
+				m.On("RenderSchema", mock.Anything, mock.MatchedBy(func(rt schema.ResolvedTarget) bool {
+					return *rt.Key == baseKey
+				}), config.Env("")).Return(renderedBytes, nil)
+			},
+			wantOutput: string(renderedBytes),
+		},
+		{
+			name:        "Invalid target",
+			args:        []string{"!!"},
+			wantErr:     true,
+			wantErrType: &schema.InvalidTargetArgumentError{},
+		},
+		{
+			name:        "Missing target (empty arg)",
+			args:        []string{""},
+			wantErr:     true,
+			wantErrType: &schema.NoTargetArgumentError{},
+		},
+		{
+			name:        "Missing target (no arg)",
+			args:        []string{},
+			wantErr:     true,
+			wantErrType: &schema.NoTargetArgumentError{},
+		},
+		{
+			name:        "Multiple schemas",
+			args:        []string{"domain/family"},
+			wantErr:     true,
+			wantErrType: &schema.TargetArgumentTargetsMultipleSchemasError{},
+		},
+		{
+			name: "Manager error",
+			args: []string{"domain_family_1_0_0"},
+			setupMock: func(m *MockManager) {
+				m.On("RenderSchema", mock.Anything, mock.Anything, mock.Anything).Return(nil, fmt.Errorf("boom"))
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockManager{registry: reg}
+			if tt.setupMock != nil {
+				tt.setupMock(m)
+			}
+
+			cmd := NewRenderSchemaCmd(m)
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.wantErrType != nil {
+					assert.IsType(t, tt.wantErrType, err)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			if tt.wantOutput != "" {
+				assert.Equal(t, tt.wantOutput+"\n", out.String())
+			}
+			m.AssertExpectations(t)
+		})
+	}
+}

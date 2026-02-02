@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "ms-vscode.makefile-tools",
+        "golang.go",
+        "yzhang.markdown-all-in-one",
+        "gruntfuggly.todo-tree"
+    ]
+}

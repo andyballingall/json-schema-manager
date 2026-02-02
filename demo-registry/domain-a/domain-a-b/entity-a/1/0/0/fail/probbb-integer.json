@@ -1,0 +1,6 @@
+{
+  "propA": 1,
+  "propB": {
+    "probBB": 123
+  }
+}
