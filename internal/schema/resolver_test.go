@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTargetResolver(t *testing.T) { //nolint:gocognit // high complexity test
+func TestTargetResolver(t *testing.T) {
 	t.Parallel()
 	r := setupTestRegistry(t)
 

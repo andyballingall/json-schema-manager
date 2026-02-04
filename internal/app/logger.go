@@ -84,7 +84,6 @@ func (m *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
-//nolint:gocritic // slog.Record is passed by value in the interface
 func (m *multiHandler) Handle(ctx context.Context, record slog.Record) error {
 	for _, h := range m.handlers {
 		if h.Enabled(ctx, record.Level) {
@@ -122,7 +121,6 @@ func (c *consoleHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= c.level.Level()
 }
 
-//nolint:gocritic // slog.Record is passed by value in the interface
 func (c *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 	// Clean output for the console
 	switch {

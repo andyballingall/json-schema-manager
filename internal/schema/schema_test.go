@@ -586,7 +586,7 @@ environments:
 	}
 }
 
-func TestBumpVersion(t *testing.T) { //nolint:gocognit // high complexity test
+func TestBumpVersion(t *testing.T) {
 	t.Parallel()
 
 	const configData = `
@@ -1382,7 +1382,7 @@ environments:
 	assert.Equal(t, docs1, docs2)
 }
 
-func TestMajorFamilyFutureSchemas(t *testing.T) { //nolint:gocognit,dupl // high complexity
+func TestMajorFamilyFutureSchemas(t *testing.T) { //nolint:dupl // high complexity
 	t.Parallel()
 
 	const configData = `
@@ -1559,7 +1559,7 @@ environments:
 	}
 }
 
-func TestMajorFamilyEarlierSchemas(t *testing.T) { //nolint:gocognit,dupl // high complexity
+func TestMajorFamilyEarlierSchemas(t *testing.T) { //nolint:dupl // high complexity
 	t.Parallel()
 
 	const configData = `

@@ -14,7 +14,7 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
-func TestNewRegistry(t *testing.T) { //nolint:gocognit // complex test setup
+func TestNewRegistry(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
