@@ -14,7 +14,9 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/config"
 )
 
-func TestRun(t *testing.T) { //nolint:paralleltest // uses os.Setenv
+func TestRun(t *testing.T) {
+	t.Parallel()
+
 	// Setup a temporary registry
 	regDir := t.TempDir()
 	cfgData := `
@@ -32,97 +34,102 @@ environments:
 		t.Fatal(err)
 	}
 
-	// Set the environment variable for the test
-	origEnv := os.Getenv("JSM_ROOT_DIRECTORY")
-	defer os.Setenv("JSM_ROOT_DIRECTORY", origEnv)
+	t.Run("run help", func(t *testing.T) {
+		t.Parallel()
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": regDir,
+		}}
+		err := Run(context.Background(), []string{"jsm", "--help"}, io.Discard, io.Discard, env)
+		require.NoError(t, err)
+	})
 
-	t.Run("run help", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			os.Setenv("JSM_ROOT_DIRECTORY", regDir)
-			err := Run(context.Background(), []string{"jsm", "--help"}, io.Discard, io.Discard)
-			require.NoError(t, err)
-		})
+	t.Run("run invalid command", func(t *testing.T) {
+		t.Parallel()
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": regDir,
+		}}
+		err := Run(context.Background(), []string{"jsm", "invalid-command"}, io.Discard, io.Discard, env)
+		require.Error(t, err)
+	})
 
-	t.Run("run invalid command", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			os.Setenv("JSM_ROOT_DIRECTORY", regDir)
-			err := Run(context.Background(), []string{"jsm", "invalid-command"}, io.Discard, io.Discard)
-			require.Error(t, err)
-		})
+	t.Run("run registry error", func(t *testing.T) {
+		t.Parallel()
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": "/non/existent/path",
+		}}
+		err := Run(context.Background(), []string{"jsm", "validate", "some.schema.json"}, io.Discard, io.Discard, env)
+		require.Error(t, err)
+	})
 
-	t.Run("run registry error", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			os.Setenv("JSM_ROOT_DIRECTORY", "/non/existent/path")
-			// The error should now be returned from ExecuteContext (via PersistentPreRunE)
-			err := Run(context.Background(), []string{"jsm", "validate", "some.schema.json"}, io.Discard, io.Discard)
-			require.Error(t, err)
-		})
+	t.Run("run setupLogger error", func(t *testing.T) {
+		t.Parallel()
+		// Set log file to a directory to cause OpenFile to fail
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": regDir,
+			"JSM_LOG_FILE":          regDir,
+		}}
 
-	t.Run("run setupLogger error", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			os.Setenv("JSM_ROOT_DIRECTORY", regDir)
-			// Set log file to a directory to cause OpenFile to fail
-			os.Setenv("JSM_LOG_FILE", regDir)
-			defer os.Unsetenv("JSM_LOG_FILE")
+		// Use a command that triggers initialization
+		err := Run(context.Background(), []string{"jsm", "validate", "missing_1_0_0"}, io.Discard, io.Discard, env)
+		require.Error(t, err)
+	})
 
-			// Use a command that triggers initialization (validate with nonexistent schema)
-			err := Run(context.Background(), []string{"jsm", "validate", "missing_1_0_0"}, io.Discard, io.Discard)
-			require.Error(t, err) // Will error due to missing schema, but logger warning path should be covered
-		})
+	t.Run("run discovery failure", func(t *testing.T) {
+		t.Parallel()
+		// Registry root directory not set and not in a registry directory
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": "",
+		}}
+		// We'll pass tmpDir as a placeholder, but discovery should fail if it's not a registry
+		// Actually, PathResolver.Abs(".") in NewRegistry will return CWD.
+		// Since we want to avoid Chdir, we rely on the fact that JSM_REGISTRY_ROOT_DIR is empty
+		// and the current CWD (project root) is not where the config is if we are elsewhere.
+		// Wait, if we are in project root, it MIGHT find it.
+		// Let's use a mock env provider that returns nothing.
 
-	t.Run("run discovery failure", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			os.Unsetenv("JSM_ROOT_DIRECTORY")
-			// Move to a directory without config to ensure discovery fails
-			origWd, _ := os.Getwd()
-			tmpDir := t.TempDir()
-			_ = os.Chdir(tmpDir)
-			defer func() { _ = os.Chdir(origWd) }()
+		err := Run(context.Background(), []string{"jsm", "validate", "some_schema_1_0_0"}, io.Discard, io.Discard, env)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "json-schema-manager-config.yml missing")
+	})
 
-			// Use validate command instead of --help to trigger initialization
-			err := Run(context.Background(), []string{"jsm", "validate", "some_schema_1_0_0"}, io.Discard, io.Discard)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "json-schema-manager-config.yml missing")
-		})
+	t.Run("run command execution error", func(t *testing.T) {
+		t.Parallel()
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": regDir,
+		}}
+		err := Run(context.Background(), []string{"jsm", "validate", "missing_1_0_0"}, io.Discard, io.Discard, env)
+		require.Error(t, err)
+	})
 
-	t.Run("run command execution error", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			os.Setenv("JSM_ROOT_DIRECTORY", regDir)
-			// validate with a key that doesn't exist should error
-			err := Run(context.Background(), []string{"jsm", "validate", "missing_1_0_0"}, io.Discard, io.Discard)
-			require.Error(t, err)
-		})
+	t.Run("run with debug flag", func(t *testing.T) {
+		t.Parallel()
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": regDir,
+		}}
+		err := Run(context.Background(), []string{"jsm", "--debug", "validate", "missing_1_0_0"}, io.Discard, io.Discard, env)
+		require.Error(t, err)
+	})
 
-	t.Run("run with debug flag", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			os.Setenv("JSM_ROOT_DIRECTORY", regDir)
-			// Run with debug flag to cover the debug branch in real initialization path
-			err := Run(context.Background(), []string{"jsm", "--debug", "validate", "missing_1_0_0"}, io.Discard, io.Discard)
-			// This will error because the schema doesn't exist, but the debug path will be covered
-			require.Error(t, err)
-		})
+	t.Run("run distribution initialisation error", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		gitRoot := filepath.Join(tmpDir, "project")
+		require.NoError(t, os.MkdirAll(gitRoot, 0o755))
 
-	t.Run("run distribution initialisation error", //nolint:paralleltest // uses os.Setenv
-		func(t *testing.T) {
-			// Registry root same as git root should error
-			tmpDir := t.TempDir()
-			gitRoot := filepath.Join(tmpDir, "project")
-			require.NoError(t, os.MkdirAll(gitRoot, 0o755))
+		cmd := exec.Command("git", "init", gitRoot)
+		require.NoError(t, cmd.Run())
 
-			// Init git
-			cmd := exec.Command("git", "-C", gitRoot, "init")
-			require.NoError(t, cmd.Run())
+		require.NoError(t, os.WriteFile(
+			filepath.Join(gitRoot, config.JsmRegistryConfigFile),
+			[]byte(cfgData),
+			0o600,
+		))
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": gitRoot,
+		}}
 
-			require.NoError(t, os.WriteFile(
-				filepath.Join(gitRoot, config.JsmRegistryConfigFile),
-				[]byte(cfgData),
-				0o600,
-			))
-			os.Setenv("JSM_ROOT_DIRECTORY", gitRoot)
-
-			// Use validate command instead of --help to trigger initialization
-			err := Run(context.Background(), []string{"jsm", "validate", "some_schema_1_0_0"}, io.Discard, io.Discard)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "registry root cannot be the same as the git root")
-		})
+		err := Run(context.Background(), []string{"jsm", "validate", "some_schema_1_0_0"}, io.Discard, io.Discard, env)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "registry root cannot be the same as the git root")
+	})
 }

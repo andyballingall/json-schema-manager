@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/repo"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
@@ -94,6 +95,26 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 
+	t.Run("init error - registry root equals git root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// Init git in reg dir
+		require.NoError(t, exec.Command("git", "-C", dir, "init").Run())
+
+		// Create a config file so NewRegistry succeeds
+		cfgData := `environments: {prod: {publicUrlRoot: 'https://p', privateUrlRoot: 'https://pr', isProduction: true}}`
+		require.NoError(t, os.WriteFile(filepath.Join(dir, config.JsmRegistryConfigFile), []byte(cfgData), 0o600))
+
+		reg, err := NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+		require.NoError(t, err)
+		cfg, _ := reg.Config()
+		gitter := &mockGitter{}
+
+		_, err = NewFSDistBuilder(reg, cfg, gitter, "dist")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be the same as the git root")
+	})
+
 	t.Run("ensureDistDir error in BuildAll", func(t *testing.T) {
 		t.Parallel()
 
@@ -137,11 +158,10 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		cfg, err := reg.Config()
 		require.NoError(t, err)
 
-		// Add multiple schemas to increase the chance of hitting the loop select
-		schemaDir := filepath.Join(reg.rootDirectory, "domain", "test", "1", "0", "0")
-		for i := 1; i <= 50; i++ {
-			filename := fmt.Sprintf("domain_test_1_0_%d.schema.json", i)
-			require.NoError(t, os.WriteFile(filepath.Join(schemaDir, filename), []byte(`{"type": "object"}`), 0o600))
+		// Add multiple schemas
+		for i := 1; i <= 5; i++ {
+			k := Key(fmt.Sprintf("domain_test_1_0_%d", i))
+			createSchemaFiles(t, reg, schemaMap{k: `{"type": "object"}`})
 		}
 
 		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
@@ -150,14 +170,38 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 
-		// Cancel the context while the searcher is still discovery schemas
+		workerStarted := make(chan struct{})
+		proceedWorker := make(chan struct{})
+
+		compiler, ok := reg.compiler.(*mockCompiler)
+		require.True(t, ok)
+		compiler.CompileFunc = func(_ string) (validator.Validator, error) {
+			select {
+			case workerStarted <- struct{}{}:
+			default:
+			}
+			<-proceedWorker
+			return &mockValidator{}, nil
+		}
+
+		// Run BuildAll in a goroutine
+		errC := make(chan error, 1)
 		go func() {
-			time.Sleep(5 * time.Millisecond)
-			cancel()
+			_, bErr := builder.BuildAll(ctx, "production")
+			errC <- bErr
 		}()
 
-		_, err = builder.BuildAll(ctx, "production")
-		assert.Error(t, err)
+		// Wait for first worker to start
+		<-workerStarted
+		// Now the worker is blocked on proceedWorker.
+		// The loop should be blocked on sem <- because numWorkers=1.
+
+		cancel()
+		close(proceedWorker)
+
+		err = <-errC
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("searcher error in loop", func(t *testing.T) {
@@ -526,7 +570,7 @@ environments:
 			},
 		}
 
-		reg, err := NewRegistry(regDir, compiler)
+		reg, err := NewRegistry(regDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
 		require.NoError(t, err)
 
 		cfg, err := reg.Config()
@@ -681,10 +725,11 @@ func TestDistBuilder_ensureDistDir(t *testing.T) {
 	})
 }
 
-func TestDistDirectory(t *testing.T) { //nolint:paralleltest // modifies global state
-	// Not parallel because it modifies global fsCanonicalPath
+func TestDistDirectory(t *testing.T) {
+	t.Parallel()
 
-	t.Run("returns sibling when not at git root", func(t *testing.T) { //nolint:paralleltest // parent test is not parallel
+	t.Run("returns sibling when not at git root", func(t *testing.T) {
+		t.Parallel()
 		// Create a mock git repo structure
 		tmpDir := t.TempDir()
 		gitRoot := filepath.Join(tmpDir, "project")
@@ -698,15 +743,16 @@ func TestDistDirectory(t *testing.T) { //nolint:paralleltest // modifies global 
 		regRoot := filepath.Join(gitRoot, "schemas")
 		require.NoError(t, os.MkdirAll(regRoot, 0o755))
 
-		reg := &Registry{rootDirectory: regRoot}
-		dist, err := distDirectory(reg, "dist")
+		pathResolver := fs.NewPathResolver()
+		dist, err := distDirectory(pathResolver, regRoot, "dist")
 		require.NoError(t, err)
 
 		expected := filepath.Join(gitRoot, "dist")
 		assert.Equal(t, expected, dist)
 	})
 
-	t.Run("errors when registry is at git root", func(t *testing.T) { //nolint:paralleltest // parent test is not parallel
+	t.Run("errors when registry is at git root", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		gitRoot := filepath.Join(tmpDir, "project")
 		require.NoError(t, os.MkdirAll(gitRoot, 0o755))
@@ -716,35 +762,36 @@ func TestDistDirectory(t *testing.T) { //nolint:paralleltest // modifies global 
 		cmd := exec.Command("git", "-C", gitRoot, "init")
 		require.NoError(t, cmd.Run())
 
-		reg := &Registry{rootDirectory: gitRoot}
-		_, err := distDirectory(reg, "dist")
+		pathResolver := fs.NewPathResolver()
+		_, err := distDirectory(pathResolver, gitRoot, "dist")
 		require.Error(t, err)
 		var rootErr *RegistryRootAtGitRootError
 		require.ErrorAs(t, err, &rootErr)
 		assert.Contains(t, err.Error(), "registry root cannot be the same as the git root")
 	})
 
-	t.Run("returns sibling when not in a git repo", func(t *testing.T) { //nolint:paralleltest // no parallel
+	t.Run("returns sibling when not in a git repo", func(t *testing.T) {
+		t.Parallel()
 		tmpDir := t.TempDir()
 		regRoot := filepath.Join(tmpDir, "registry")
 		require.NoError(t, os.MkdirAll(regRoot, 0o755))
 		regRoot, _ = filepath.EvalSymlinks(regRoot)
 
-		reg := &Registry{rootDirectory: regRoot}
-		dist, err := distDirectory(reg, "dist")
+		pathResolver := fs.NewPathResolver()
+		dist, err := distDirectory(pathResolver, regRoot, "dist")
 		require.NoError(t, err)
 
 		expected := filepath.Join(filepath.Dir(regRoot), "dist")
 		assert.Equal(t, expected, dist)
 	})
 
-	t.Run("returns error when canonicalPath fails", func(t *testing.T) { //nolint:paralleltest // modifies global state
-		// Save and restore
-		original := fsCanonicalPath
-		defer func() { fsCanonicalPath = original }()
+	t.Run("returns error when canonicalPath fails", func(t *testing.T) {
+		t.Parallel()
 
-		fsCanonicalPath = func(_ string) (string, error) {
-			return "", fmt.Errorf("canonical error")
+		mockResolver := &mockPathResolver{
+			canonicalPathFn: func(_ string) (string, error) {
+				return "", fmt.Errorf("canonical error")
+			},
 		}
 
 		tmpDir := t.TempDir()
@@ -755,8 +802,7 @@ func TestDistDirectory(t *testing.T) { //nolint:paralleltest // modifies global 
 		cmd := exec.Command("git", "-C", gitRoot, "init")
 		require.NoError(t, cmd.Run())
 
-		reg := &Registry{rootDirectory: gitRoot}
-		_, err := distDirectory(reg, "dist")
+		_, err := distDirectory(mockResolver, gitRoot, "dist")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "canonical error")
 	})
@@ -782,7 +828,7 @@ environments:
 	schemaFile := filepath.Join(schemaDir, "domain_test_1_0_0.schema.json")
 	require.NoError(t, os.WriteFile(schemaFile, []byte(`{"type": "object"}`), 0o600))
 
-	reg, err := NewRegistry(dir, &mockCompiler{})
+	reg, err := NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 	require.NoError(t, err)
 	return reg
 }
@@ -817,7 +863,7 @@ environments:
 	privateContent := []byte(`{"type": "object"}`)
 	require.NoError(t, os.WriteFile(filepath.Join(privateDir, "domain_private_1_0_0.schema.json"), privateContent, 0o600))
 
-	reg, err := NewRegistry(regDir, &mockCompiler{})
+	reg, err := NewRegistry(regDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 	require.NoError(t, err)
 	cfg, err := reg.Config()
 	require.NoError(t, err)

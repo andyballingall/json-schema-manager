@@ -9,14 +9,14 @@ cp config.yml registry/json-schema-manager-config.yml
 exec git add .
 exec git commit -m "init"
 
-env JSM_ROOT_DIRECTORY=registry
+env JSM_REGISTRY_ROOT_DIR=registry
 
 # Error: Invalid environment
 ! exec jsm check-changes non-existent
 stderr 'does not define environment'
 
 # Error: git history error (running from outside repo)
-env JSM_ROOT_DIRECTORY=$WORK/registry
+env JSM_REGISTRY_ROOT_DIR=$WORK/registry
 mkdir $WORK/../outside
 cd $WORK/../outside
 ! exec jsm check-changes production

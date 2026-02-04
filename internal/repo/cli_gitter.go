@@ -9,19 +9,30 @@ import (
 	"time"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
-
-// absPath is a variable for filepath.Abs to allow mocking in tests.
-var absPath = filepath.Abs
 
 // CLIGitter is the concrete implementation of Gitter using the git CLI.
 type CLIGitter struct {
-	cfg *config.Config
+	cfg          *config.Config
+	pathResolver fs.PathResolver
+	repoRoot     string
+	gitBinary    string
 }
 
 // NewCLIGitter creates a new CLIGitter instance.
-func NewCLIGitter(cfg *config.Config) *CLIGitter {
-	return &CLIGitter{cfg: cfg}
+func NewCLIGitter(cfg *config.Config, pathResolver fs.PathResolver, repoRoot string) *CLIGitter {
+	return &CLIGitter{
+		cfg:          cfg,
+		pathResolver: pathResolver,
+		repoRoot:     repoRoot,
+		gitBinary:    "git",
+	}
+}
+
+// SetGitBinary allows overriding the git binary path (primarily for testing).
+func (g *CLIGitter) SetGitBinary(bin string) {
+	g.gitBinary = bin
 }
 
 // getEnvConfig looks up the EnvConfig for the given environment.
@@ -44,13 +55,17 @@ func (g *CLIGitter) GetLatestAnchor(env config.Env) (Revision, error) {
 	tagPattern := fmt.Sprintf("%s/*", g.tagPrefix(env))
 
 	// --abbrev=0 finds the closest reachable tag matching the pattern
-	cmd := exec.Command("git", "describe", "--tags", "--match", tagPattern, "--abbrev=0")
+	//nolint:gosec // CMD arguments are internal
+	cmd := exec.Command(g.gitBinary, "describe", "--tags", "--match", tagPattern, "--abbrev=0")
+	cmd.Dir = g.repoRoot
 	var out bytes.Buffer
 	cmd.Stdout = &out
 
 	if err := cmd.Run(); err != nil {
 		// Fallback: Get the root commit (Day Zero)
-		revCmd := exec.Command("git", "rev-list", "--max-parents=0", "HEAD")
+		//nolint:gosec // CMD arguments are internal
+		revCmd := exec.Command(g.gitBinary, "rev-list", "--max-parents=0", "HEAD")
+		revCmd.Dir = g.repoRoot
 		revOut, rErr := revCmd.Output()
 		if rErr != nil {
 			return "", fmt.Errorf("could not find git history: %w", rErr)
@@ -63,7 +78,9 @@ func (g *CLIGitter) GetLatestAnchor(env config.Env) (Revision, error) {
 
 // getGitRoot finds the top-level directory of the git repository.
 func (g *CLIGitter) getGitRoot() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	//nolint:gosec // CMD arguments are internal
+	cmd := exec.Command(g.gitBinary, "rev-parse", "--show-toplevel")
+	cmd.Dir = g.repoRoot
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to find git root: %w", err)
@@ -81,13 +98,17 @@ func (g *CLIGitter) TagDeploymentSuccess(env config.Env) (string, error) {
 	tagName := fmt.Sprintf("%s/%s", g.tagPrefix(env), timestamp)
 
 	// 1. Create the local annotated tag
-	tagCmd := exec.Command("git", "tag", "-a", tagName, "-m", fmt.Sprintf("Successful JSM deployment to %s", env))
+	//nolint:gosec // CMD arguments are internal
+	tagCmd := exec.Command(g.gitBinary, "tag", "-a", tagName, "-m", fmt.Sprintf("Successful JSM deployment to %s", env))
+	tagCmd.Dir = g.repoRoot
 	if err := tagCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to create git tag: %w", err)
 	}
 
 	// 2. Push the tag to origin
-	pushCmd := exec.Command("git", "push", "origin", tagName)
+	//nolint:gosec // CMD arguments are internal
+	pushCmd := exec.Command(g.gitBinary, "push", "origin", tagName)
+	pushCmd.Dir = g.repoRoot
 	if err := pushCmd.Run(); err != nil {
 		return tagName, fmt.Errorf("failed to push git tag to origin: %w", err)
 	}
@@ -97,7 +118,10 @@ func (g *CLIGitter) TagDeploymentSuccess(env config.Env) (string, error) {
 
 // GetSchemaChanges identifies files with the given suffix changed between the anchor and HEAD.
 func (g *CLIGitter) GetSchemaChanges(anchor Revision, sourceDir, suffix string) ([]Change, error) {
-	absSourceDir, err := absPath(sourceDir)
+	if !filepath.IsAbs(sourceDir) {
+		sourceDir = filepath.Join(g.repoRoot, sourceDir)
+	}
+	absSourceDir, err := g.pathResolver.Abs(sourceDir)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +132,8 @@ func (g *CLIGitter) GetSchemaChanges(anchor Revision, sourceDir, suffix string) 
 	}
 
 	//nolint:gosec // CMD arguments are internal and path is absolute
-	cmd := exec.Command("git", "diff", "--name-status", anchor.String(), "--", absSourceDir)
+	cmd := exec.Command(g.gitBinary, "diff", "--name-status", anchor.String(), "--", absSourceDir)
+	cmd.Dir = g.repoRoot
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git diff failed: %w (output: %s)", err, string(out))

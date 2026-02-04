@@ -1,82 +1,36 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
 
-linters-settings:
-  govet:
-    # ENABLE-ALL ensures standard checks (printf, atomic, etc.) are active.
-    enable-all: true
-    disable:
-      - fieldalignment
-    settings:
-      shadow:
-        strict: true
-
-  gocyclo:
-    min-complexity: 15
-
-  misspell:
-    locale: UK
-
-  lll:
-    line-length: 120
-
-  goimports:
-    local-prefixes: github.com/andyballingall/json-schema-manager
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-      - experimental
-      - opinionated
-    disabled-checks:
-      - dupImport
-      - whyNoLint
-      - wrapperFunc
-
-  nolintlint:
-    allow-unused: false
-    require-explanation: true
-    require-specific: true
-
-  testifylint:
-    enable-all: true
-
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-
-  tagliatelle:
-    case:
-      use-camel-case: true
-      rules:
-        json: camel
-        yaml: camel
-
-  gocognit:
-    min-complexity: 20
-
-  godot:
-    scope: declarations
-    capital: true
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - gci
+    - golines
+  settings:
+    gofumpt:
+      module-path: github.com/andyballingall/json-schema-manager
+    goimports:
+      # A list of prefixes, which, if set, checks import paths
+      # with the given prefixes are grouped after 3rd-party packages.
+      # Default: []
+      local-prefixes:
+        - github.com/andyballingall/json-schema-manager
+    golines:
+      max-len: 120
 
 linters:
-  disable-all: true
   enable:
     # Basics
-    - govet
     - errcheck
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
-    - typecheck
 
     # Formatting & Style
-    - gofumpt
-    - goimports
     - revive
     - misspell
     - lll
@@ -85,7 +39,6 @@ linters:
 
     # Complexity & Quality
     - gocritic
-    - gocyclo
     - unconvert
     - prealloc
     - nakedret
@@ -117,6 +70,55 @@ linters:
     - usestdlibvars
     - dupl
     - wastedassign
+  settings:
+    govet:
+      # ENABLE-ALL ensures standard checks (printf, atomic, etc.) are active.
+      enable-all: true
+      disable:
+        - fieldalignment
 
-severity:
-  default: error
+    gocyclo:
+      min-complexity: 15
+
+    misspell:
+      locale: UK
+
+    lll:
+      line-length: 120
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+        - opinionated
+      disabled-checks:
+        - dupImport
+        - whyNoLint
+        - wrapperFunc
+
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+
+    testifylint:
+      enable-all: true
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    tagliatelle:
+      case:
+        rules:
+          json: camel
+          yaml: camel
+
+    gocognit:
+      min-complexity: 10
+
+    godot:
+      scope: declarations
+      capital: true

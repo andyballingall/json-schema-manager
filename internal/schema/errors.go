@@ -58,14 +58,6 @@ func (e *InvalidPatchVersionError) Error() string {
 	return fmt.Sprintf("%s is not a valid patch version", e.v)
 }
 
-type InvalidSemanticVersionError struct {
-	Key Key
-}
-
-func (e *InvalidSemanticVersionError) Error() string {
-	return fmt.Sprintf("%s does not have a valid semantic version", e.Key)
-}
-
 type InvalidKeyStringError struct {
 	ks string
 }
@@ -145,12 +137,13 @@ func (e TemplateExecutionFailedError) Error() string {
 		"Error: %v", e.Path, e.Wrapped)
 }
 
-type RegistryRootNotFoundError struct {
+type RegistryInitError struct {
 	Path string
+	Err  error
 }
 
-func (e *RegistryRootNotFoundError) Error() string {
-	return fmt.Sprintf("registry root not found: %s", e.Path)
+func (e *RegistryInitError) Error() string {
+	return fmt.Sprintf("Registry could not be initialised. Path: %s, Error: %s", e.Path, e.Err)
 }
 
 type RegistryRootNotFolderError struct {
@@ -158,7 +151,7 @@ type RegistryRootNotFolderError struct {
 }
 
 func (e *RegistryRootNotFolderError) Error() string {
-	return fmt.Sprintf("registry root is not a folder: %s", e.Path)
+	return fmt.Sprintf("Registry could not be initialised. Path: %s is not a directory", e.Path)
 }
 
 type JSMArgInvalidKeyError struct {
@@ -202,21 +195,6 @@ func (e *InvalidSchemaFilenameError) Error() string {
 	return fmt.Sprintf("schema file %s has an invalid filename structure", e.Path)
 }
 
-type NoSearchTargetError struct{}
-
-func (e *NoSearchTargetError) Error() string {
-	return "No search target has been set"
-}
-
-type FailedToCompileSchemaError struct {
-	Key     Key
-	Wrapped error
-}
-
-func (e FailedToCompileSchemaError) Error() string {
-	return fmt.Sprintf("Failed to compile schema %s: %s", e.Key, e.Wrapped)
-}
-
 type FailTestPassedError struct {
 	SchemaPath  string
 	TestDocPath string
@@ -254,12 +232,12 @@ func (e InvalidTestDocumentError) Error() string {
 	return fmt.Sprintf("test document %s is not valid JSON", e.Path)
 }
 
-type TestDirMissingError struct {
+type TestDirMissingConfigError struct {
 	Path string
 	Type TestDocType
 }
 
-func (e *TestDirMissingError) Error() string {
+func (e *TestDirMissingConfigError) Error() string {
 	return fmt.Sprintf("%s directory missing: %s", e.Type, e.Path)
 }
 

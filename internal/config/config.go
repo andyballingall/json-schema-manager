@@ -97,7 +97,7 @@ func (e *EnvConfig) URLRoot(isPublic bool) string {
 func New(registryRootDir string, compiler validator.Compiler) (*Config, error) {
 	configPath := filepath.Join(registryRootDir, JsmRegistryConfigFile)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, &MissingError{Path: registryRootDir}
+		return nil, &MissingConfigError{Path: registryRootDir}
 	}
 
 	data, err := os.ReadFile(configPath)

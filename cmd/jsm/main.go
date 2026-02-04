@@ -14,7 +14,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.Run(ctx, os.Args, os.Stdout, os.Stderr); err != nil {
+	if err := app.Run(ctx, os.Args, os.Stdout, os.Stderr, nil); err != nil {
 		//nolint:gocritic // os.Exit is intentional
 		os.Exit(1)
 	}

@@ -50,11 +50,7 @@ func TestErrors(t *testing.T) {
 			err:      &InvalidPatchVersionError{v: "v1"},
 			contains: []string{"v1 is not a valid patch version"},
 		},
-		{
-			name:     "InvalidSemanticVersionError",
-			err:      &InvalidSemanticVersionError{Key: "invalid_version"},
-			contains: []string{"invalid_version"},
-		},
+
 		{
 			name:     "InvalidKeyStringError",
 			err:      &InvalidKeyStringError{ks: "invalid"},
@@ -110,9 +106,9 @@ func TestErrors(t *testing.T) {
 			contains: []string{"/path/to/template.json", "execution error"},
 		},
 		{
-			name:     "RegistryRootNotFoundError",
-			err:      &RegistryRootNotFoundError{Path: "/nonexistent"},
-			contains: []string{"/nonexistent"},
+			name:     "RegistryInitError",
+			err:      &RegistryInitError{Path: "/nonexistent", Err: errors.New("test error")},
+			contains: []string{"/nonexistent", "test error", "Registry could not be initialised"},
 		},
 		{
 			name:     "RegistryRootNotFolderError",
@@ -147,19 +143,7 @@ func TestErrors(t *testing.T) {
 			err:      &InvalidSchemaFilenameError{Path: "/invalid.json"},
 			contains: []string{"schema file /invalid.json has an invalid filename structure"},
 		},
-		{
-			name:     "NoSearchTargetError",
-			err:      &NoSearchTargetError{},
-			contains: []string{"No search target has been set"},
-		},
-		{
-			name: "FailedToCompileSchemaError",
-			err: FailedToCompileSchemaError{
-				Key:     "domain_family_1_0_0",
-				Wrapped: errors.New("compile error"),
-			},
-			contains: []string{"Failed to compile schema domain_family_1_0_0", "compile error"},
-		},
+
 		{
 			name: "FailTestPassedError",
 			err: FailTestPassedError{
@@ -188,12 +172,37 @@ func TestErrors(t *testing.T) {
 			contains: []string{"test document /test.json is not valid JSON"},
 		},
 		{
-			name: "TestDirMissingError",
-			err: &TestDirMissingError{
+			name: "TestDirMissingConfigError",
+			err: &TestDirMissingConfigError{
 				Path: "/path/to/pass",
 				Type: TestDocTypePass,
 			},
 			contains: []string{"pass directory missing: /path/to/pass"},
+		},
+		{
+			name:     "InvalidTargetArgumentError",
+			err:      &InvalidTargetArgumentError{Arg: "invalid"},
+			contains: []string{"Invalid schema target: invalid"},
+		},
+		{
+			name:     "TargetArgumentTargetsMultipleSchemasError",
+			err:      &TargetArgumentTargetsMultipleSchemasError{Arg: "multiple"},
+			contains: []string{"Schema target multiple targets multiple schemas"},
+		},
+		{
+			name:     "InvalidReleaseTypeError",
+			err:      &InvalidReleaseTypeError{Value: "invalid"},
+			contains: []string{"Invalid release type: invalid"},
+		},
+		{
+			name:     "NoTargetArgumentError",
+			err:      &NoTargetArgumentError{},
+			contains: []string{"No target has been provided"},
+		},
+		{
+			name:     "ChangedDeployedSchemasError",
+			err:      &ChangedDeployedSchemasError{Paths: []string{"f1.json"}},
+			contains: []string{"cannot modify deployed schemas", "f1.json"},
 		},
 	}
 

@@ -41,7 +41,7 @@ func TestNewConfig(t *testing.T) {
 		require.NoError(t, os.Mkdir(regDir, 0o755))
 
 		_, err := New(regDir, mc)
-		var target *MissingError
+		var target *MissingConfigError
 		require.ErrorAs(t, err, &target)
 		assert.EqualError(t, err, "json-schema-manager-config.yml missing in: "+regDir)
 	})

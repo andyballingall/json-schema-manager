@@ -7,7 +7,7 @@ exec git commit --allow-empty -m "initial"
 # Create a registry config
 mkdir registry
 cp config.yml registry/json-schema-manager-config.yml
-env JSM_ROOT_DIRECTORY=registry
+env JSM_REGISTRY_ROOT_DIR=registry
 
 # Run jsm tag-deployment (should succeed locally even if push fails)
 exec jsm tag-deployment production

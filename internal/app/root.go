@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/repo"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
@@ -47,7 +48,7 @@ changes in data contracts will not break existing services.
 `
 
 // NewRootCmd creates the root command and wires up dependencies.
-func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer) *cobra.Command {
+func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer, envProvider fs.EnvProvider) *cobra.Command {
 	var debug bool
 	var noColour bool
 	var registryPath string
@@ -79,20 +80,21 @@ func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer) *cobra.C
 
 			// 2. Build Dependencies
 			compiler := validator.NewSanthoshCompiler()
+			pathResolver := fs.NewPathResolver()
 
-			registry, err := schema.NewRegistry(registryPath, compiler)
+			registry, err := schema.NewRegistry(registryPath, compiler, pathResolver, envProvider)
 			if err != nil {
 				return fmt.Errorf("registry initialisation failed: %w", err)
 			}
 
-			logger, _, err := setupLogger(stderr, ll, registry.RootDirectory())
+			logger, _, err := setupLogger(stderr, ll, registry.RootDirectory(), "", envProvider)
 			if err != nil {
 				logger.Warn("logging to file disabled", "error", err)
 			}
 
 			tester := schema.NewTester(registry)
 			cfg, _ := registry.Config()
-			gitter := repo.NewCLIGitter(cfg)
+			gitter := repo.NewCLIGitter(cfg, pathResolver, "")
 			distBuilder, err := schema.NewFSDistBuilder(registry, cfg, gitter, "dist")
 			if err != nil {
 				return fmt.Errorf("failed to initialise distribution builder: %w", err)
@@ -123,7 +125,8 @@ func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer) *cobra.C
 	_ = rootCmd.PersistentFlags().MarkHidden("noColour")
 
 	// Subcommands
-	rootCmd.AddCommand(NewCreateRegistryCmd())
+	pathResolver := fs.NewPathResolver()
+	rootCmd.AddCommand(NewCreateRegistryCmd(pathResolver))
 	rootCmd.AddCommand(NewValidateCmd(lazy))
 	rootCmd.AddCommand(NewCreateSchemaCmd(lazy))
 	rootCmd.AddCommand(NewCreateSchemaVersionCmd(lazy))

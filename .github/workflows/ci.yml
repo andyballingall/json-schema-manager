@@ -1,12 +1,22 @@
 name: CI
+
+permissions:
+    contents: read
+
 on:
     push:
         branches: [main]
     pull_request:
         branches: [main]
 
+# Prevents multiple runs from the same PR overlapping
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
 jobs:
     test:
+        name: Code Tests
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
@@ -26,5 +36,13 @@ jobs:
             - name: Run Linter
               run: make lint
 
-            - name: Run Tests
+            - name: Run Race Tests
               run: make test-race
+
+            - name: Check Coverage
+              run: make check-coverage
+
+            - name: Run govulncheck
+              uses: golang/govulncheck-action@v1
+              with:
+                  go-version-file: go.mod

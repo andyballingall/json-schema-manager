@@ -7,7 +7,7 @@ exec git commit --allow-empty -m "initial"
 # Create a registry config
 mkdir registry
 cp config.yml registry/json-schema-manager-config.yml
-env JSM_ROOT_DIRECTORY=registry
+env JSM_REGISTRY_ROOT_DIR=registry
 
 # Create a schema
 mkdir registry/domain/person/1/0/0

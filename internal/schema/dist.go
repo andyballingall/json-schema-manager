@@ -24,8 +24,6 @@ func (e *RegistryRootAtGitRootError) Error() string {
 	return fmt.Sprintf("registry root cannot be the same as the git root: %s", e.Path)
 }
 
-var fsCanonicalPath = fs.CanonicalPath
-
 // DistBuilder is an interface for building schema distributions.
 type DistBuilder interface {
 	BuildAll(ctx context.Context, env config.Env) (int, error)
@@ -44,7 +42,7 @@ type FSDistBuilder struct {
 
 // NewFSDistBuilder creates a new DistBuilder for the given registry and config.
 func NewFSDistBuilder(r *Registry, cfg *config.Config, g repo.Gitter, distDirName string) (DistBuilder, error) {
-	distDir, err := distDirectory(r, distDirName)
+	distDir, err := distDirectory(r.pathResolver, r.RootDirectory(), distDirName)
 	if err != nil {
 		return nil, err
 	}
@@ -229,10 +227,7 @@ func (b *FSDistBuilder) ensureDistDir(env config.Env) error {
 // distDirectory finds the directory to use for the distribution artefacts.
 // It returns an error if the registry root is the same as the git root.
 // Otherwise it returns a sibling directory of the registry root.
-func distDirectory(r *Registry, distDirName string) (string, error) {
-	// RootDirectory is already canonicalized during registry initialization
-	registryRoot := r.RootDirectory()
-
+func distDirectory(pathResolver fs.PathResolver, registryRoot, distDirName string) (string, error) {
 	cmd := exec.Command("git", "-C", registryRoot, "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()
 	if err != nil {
@@ -240,7 +235,7 @@ func distDirectory(r *Registry, distDirName string) (string, error) {
 		return filepath.Join(filepath.Dir(registryRoot), distDirName), nil //nolint:nilerr // fallback
 	}
 
-	gitRoot, err := fsCanonicalPath(strings.TrimSpace(string(out)))
+	gitRoot, err := pathResolver.CanonicalPath(strings.TrimSpace(string(out)))
 	if err != nil {
 		return "", err
 	}

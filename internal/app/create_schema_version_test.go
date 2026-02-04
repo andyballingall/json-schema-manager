@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
@@ -22,7 +23,7 @@ func TestNewCreateSchemaVersionCmd(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
 	require.NoError(t, os.WriteFile(configPath, []byte(simpleTestConfig), 0o600))
 
-	reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{})
+	reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 	require.NoError(t, rErr)
 
 	// Create a dummy schema file for resolution to work

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/repo"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
@@ -90,7 +91,9 @@ func setupTestRegistry(t *testing.T) *schema.Registry {
 		t.Fatal(err)
 	}
 	compiler := &mockCompiler{}
-	r, err := schema.NewRegistry(regDir, compiler)
+	pathResolver := fs.NewPathResolver()
+	envProvider := fs.NewEnvProvider()
+	r, err := schema.NewRegistry(regDir, compiler, pathResolver, envProvider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +186,7 @@ environments:
     isProduction: true
 `
 		require.NoError(t, os.WriteFile(filepath.Join(regDir, config.JsmRegistryConfigFile), []byte(cfg), 0o600))
-		r, err := schema.NewRegistry(regDir, &mockCompiler{})
+		r, err := schema.NewRegistry(regDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		require.NoError(t, err)
 
 		tKey := schema.Key("d2_f2_1_0_0")
@@ -198,69 +201,6 @@ environments:
 		require.Error(t, vErr)
 		require.ErrorContains(t, vErr, "pass directory missing")
 	})
-}
-
-func TestCLIManager_ValidateSchema_RelativePathBug(t *testing.T) { //nolint:paralleltest // uses os.Chdir
-	// 1. Setup a real registry structure in a temp dir
-	regDir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-
-	cfgData := `
-environments:
-  prod:
-    privateUrlRoot: "https://json-schemas.internal.myorg.io/"
-    publicUrlRoot: "https://json-schemas.myorg.io/"
-    isProduction: true
-`
-	err = os.WriteFile(filepath.Join(regDir, config.JsmRegistryConfigFile), []byte(cfgData), 0o600)
-	require.NoError(t, err)
-
-	// Create a schema at the expected JSM path
-	// domain: d1, family: f1, version: 1.0.0
-	// Path: regDir/d1/f1/1/0/0/d1_f1_1_0_0.schema.json
-	schemaSubDir := filepath.Join(regDir, "d1", "f1", "1", "0", "0")
-	err = os.MkdirAll(schemaSubDir, 0o755)
-	require.NoError(t, err)
-
-	schemaFileName := "d1_f1_1_0_0.schema.json"
-	schemaPath := filepath.Join(schemaSubDir, schemaFileName)
-	err = os.WriteFile(schemaPath, []byte(`{"type": "object"}`), 0o600)
-	require.NoError(t, err)
-
-	// Create pass and fail directories
-	require.NoError(t, os.MkdirAll(filepath.Join(schemaSubDir, "pass"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(schemaSubDir, "fail"), 0o755))
-
-	// 2. Simulate running jsm from within that sub-directory
-	originalWd, err := os.Getwd()
-	require.NoError(t, err)
-	err = os.Chdir(schemaSubDir)
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(originalWd) }()
-
-	// We NEED to ensure JSM_ROOT_DIRECTORY is NOT set so it uses discovery
-	origEnv := os.Getenv(schema.RootDirEnvVar)
-	os.Unsetenv(schema.RootDirEnvVar)
-	defer os.Setenv(schema.RootDirEnvVar, origEnv)
-
-	// 3. Initialise the registry (this will trigger discovery)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	compiler := &mockCompiler{}
-
-	// We recreate what happens in Run() / NewCLIManager()
-	// but we use the discovery mechanism.
-	reg, err := schema.NewRegistry("", compiler)
-	require.NoError(t, err)
-
-	tester := schema.NewTester(reg)
-	mgr := NewCLIManager(logger, reg, tester, &MockGitter{}, nil)
-
-	// 4. Try to validate using a relative path (as the user did)
-	keyTarget := schema.Key(schemaFileName)
-	err = mgr.ValidateSchema(context.Background(), schema.ResolvedTarget{Key: &keyTarget},
-		false, "text", false, false, schema.TestScopeLocal, false)
-
-	require.NoError(t, err, "Validation should succeed even when run from a sub-directory")
 }
 
 func TestCLIManager_CreateSchema(t *testing.T) {
@@ -434,7 +374,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
   prod: {publicUrlRoot: 'https://p', privateUrlRoot: 'https://pr', isProduction: true}
   dev: {publicUrlRoot: 'https://d', privateUrlRoot: 'https://dr', isProduction: false}`
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "json-schema-manager-config.yml"), []byte(configData), 0o600))
-		registry, err := schema.NewRegistry(tmpDir, &mockCompiler{})
+		registry, err := schema.NewRegistry(tmpDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		require.NoError(t, err)
 
 		tester := schema.NewTester(registry)
@@ -528,7 +468,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		tmpDir := t.TempDir()
 		cfgPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(testConfigData), 0o600))
-		registry, _ := schema.NewRegistry(tmpDir, &failingCompiler{})
+		registry, _ := schema.NewRegistry(tmpDir, &failingCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
@@ -542,50 +482,51 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 	})
 }
 
-func TestCLIManager_CheckChanges(t *testing.T) { //nolint:paralleltest // uses os.Chdir
+func TestCLIManager_CheckChanges(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := setupTestRegistry(t)
 	mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
 
-	t.Run("config error", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir in parent
+	t.Run("config error", func(t *testing.T) {
+		t.Parallel()
 		// Use an empty registry to simulate uninitialised config
 		m := NewCLIManager(logger, &schema.Registry{}, nil, &MockGitter{}, nil)
 		err := m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
 	})
 
-	t.Run("invalid environment", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir in parent
+	t.Run("invalid environment", func(t *testing.T) {
+		t.Parallel()
 		err := mgr.CheckChanges(context.Background(), "invalid")
 		require.Error(t, err)
 	})
 
-	t.Run("git history error", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir in parent
+	t.Run("git history error", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir() // Not a git repo
 		cfgPath := filepath.Join(dir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(testConfigData), 0o600))
 
-		registry2, err := schema.NewRegistry(dir, &mockCompiler{})
+		registry2, err := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		require.NoError(t, err)
 
 		cfg2, err := registry2.Config()
 		require.NoError(t, err)
-		m := NewCLIManager(logger, registry2, nil, repo.NewCLIGitter(cfg2), nil)
-
-		origDir, _ := os.Getwd()
-		require.NoError(t, os.Chdir(dir))
-		defer func() { _ = os.Chdir(origDir) }()
+		m := NewCLIManager(logger, registry2, nil, repo.NewCLIGitter(cfg2, fs.NewPathResolver(), dir), nil)
 
 		err = m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "could not find git history")
 	})
 
-	t.Run("success", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir in parent
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		// Init git repo
-		_ = exec.Command("git", "init", dir).Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.name", "t").Run()
+		require.NoError(t, exec.Command("git", "init", dir).Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.name", "t").Run())
 
 		// Create a schema in a sub-directory
 		schemaDir := filepath.Join(dir, "domain", "family", "1", "0", "0")
@@ -599,14 +540,10 @@ func TestCLIManager_CheckChanges(t *testing.T) { //nolint:paralleltest // uses o
 		cfgPath := filepath.Join(dir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(testConfigData), 0o600))
 
-		registry4, err := schema.NewRegistry(dir, &mockCompiler{})
+		registry4, err := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		require.NoError(t, err)
 
 		m := NewCLIManager(logger, registry4, nil, &MockGitter{}, nil)
-
-		origDir, _ := os.Getwd()
-		require.NoError(t, os.Chdir(dir))
-		defer func() { _ = os.Chdir(origDir) }()
 
 		// No changes
 		err = m.CheckChanges(context.Background(), "prod")
@@ -615,18 +552,24 @@ func TestCLIManager_CheckChanges(t *testing.T) { //nolint:paralleltest // uses o
 		// New schema
 		f2 := filepath.Join(schemaDir, "f2.schema.json")
 		require.NoError(t, os.WriteFile(f2, []byte("{}"), 0o600))
-		require.NoError(t, exec.Command("git", "add", ".").Run())
-		require.NoError(t, exec.Command("git", "commit", "-m", "new schema").Run())
+		gitAdd := exec.Command("git", "add", ".")
+		gitAdd.Dir = dir
+		require.NoError(t, gitAdd.Run())
+
+		gitCommit := exec.Command("git", "commit", "-m", "new schema")
+		gitCommit.Dir = dir
+		require.NoError(t, gitCommit.Run())
 
 		err = m.CheckChanges(context.Background(), "prod")
 		require.NoError(t, err)
 	})
 
-	t.Run("mutation forbidden", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir in parent
+	t.Run("mutation forbidden", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
-		_ = exec.Command("git", "init", dir).Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.name", "t").Run()
+		require.NoError(t, exec.Command("git", "init", dir).Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.name", "t").Run())
 
 		schemaDir := filepath.Join(dir, "domain", "family", "1", "0", "0")
 		require.NoError(t, os.MkdirAll(schemaDir, 0o755))
@@ -642,13 +585,9 @@ func TestCLIManager_CheckChanges(t *testing.T) { //nolint:paralleltest // uses o
 		require.NoError(t, exec.Command("git", "-C", dir, "commit", "-m", "mu").Run())
 
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
-		r, _ := schema.NewRegistry(dir, &mockCompiler{})
+		r, _ := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		rcfg, _ := r.Config()
-		m := NewCLIManager(logger, r, nil, repo.NewCLIGitter(rcfg), nil)
-
-		origDir, _ := os.Getwd()
-		require.NoError(t, os.Chdir(dir))
-		defer func() { _ = os.Chdir(origDir) }()
+		m := NewCLIManager(logger, r, nil, repo.NewCLIGitter(rcfg, fs.NewPathResolver(), dir), nil)
 
 		err := m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
@@ -658,11 +597,12 @@ func TestCLIManager_CheckChanges(t *testing.T) { //nolint:paralleltest // uses o
 		assert.Contains(t, mutationErr.Paths[0], "f1.schema.json")
 	})
 
-	t.Run("mutation allowed", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir in parent
+	t.Run("mutation allowed", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
-		_ = exec.Command("git", "init", dir).Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.name", "t").Run()
+		require.NoError(t, exec.Command("git", "init", dir).Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.name", "t").Run())
 
 		schemaDir := filepath.Join(dir, "domain", "family", "1", "0", "0")
 		require.NoError(t, os.MkdirAll(schemaDir, 0o755))
@@ -682,146 +622,97 @@ environments:
   prod: {publicUrlRoot: 'https://p', privateUrlRoot: 'https://pr', isProduction: true, allowSchemaMutation: true}`
 		cfgPath := filepath.Join(dir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(cfgWithMutation), 0o600))
-		r, _ := schema.NewRegistry(dir, &mockCompiler{})
+		r, _ := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil)
-
-		origDir, _ := os.Getwd()
-		require.NoError(t, os.Chdir(dir))
-		defer func() { _ = os.Chdir(origDir) }()
 
 		err := m.CheckChanges(context.Background(), "prod")
 		require.NoError(t, err)
 	})
 
-	t.Run("GetSchemaChanges error", func(t *testing.T) { //nolint:paralleltest // manipulates PATH
-		dir := t.TempDir()
-		binDir := filepath.Join(dir, "bin")
-		require.NoError(t, os.Mkdir(binDir, 0o755))
-
-		realGit, _ := exec.LookPath("git")
-		// Script that fails only if 'diff' is an argument
-		gitScript := fmt.Sprintf(`#!/bin/sh
-for arg in "$@"; do
-	if [ "$arg" = "diff" ]; then
-		exit 1
-	fi
-done
-exec %s "$@"
-`, realGit)
-		gitPath := filepath.Join(binDir, "git")
-		//nolint:gosec // need executable permission for mock git
-		require.NoError(t, os.WriteFile(gitPath, []byte(gitScript), 0o755))
-
-		repoDir := filepath.Join(dir, "repo")
-		_ = exec.Command("git", "init", repoDir).Run()
-		_ = exec.Command("git", "-C", repoDir, "config", "user.email", "t@t.com").Run()
-		_ = exec.Command("git", "-C", repoDir, "config", "user.name", "t").Run()
-		_ = os.WriteFile(filepath.Join(repoDir, "f1"), []byte("{}"), 0o600)
-		_ = exec.Command("git", "-C", repoDir, "add", ".").Run()
-		_ = exec.Command("git", "-C", repoDir, "commit", "-m", "in").Run()
-
-		cfgPath2 := filepath.Join(repoDir, "json-schema-manager-config.yml")
-		require.NoError(t, os.WriteFile(cfgPath2, []byte(testConfigData), 0o600))
-		r, _ := schema.NewRegistry(repoDir, &mockCompiler{})
-		rcfg, _ := r.Config()
-		m := NewCLIManager(logger, r, nil, repo.NewCLIGitter(rcfg), nil)
-
-		origPath := os.Getenv("PATH")
-		_ = os.Setenv("PATH", binDir+":"+origPath)
-		defer func() { _ = os.Setenv("PATH", origPath) }()
+	t.Run("GetSchemaChanges error", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		mockGitter := &MockGitter{
+			GetSchemaChangesFunc: func(_ repo.Revision, _, _ string) ([]repo.Change, error) {
+				return nil, fmt.Errorf("git diff failed")
+			},
+		}
+		m := NewCLIManager(logger, r, nil, mockGitter, nil)
 
 		err := m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "git diff failed")
 	})
 }
 
-func TestCLIManager_TagDeployment(t *testing.T) { //nolint:paralleltest // uses os.Chdir
+func TestCLIManager_TagDeployment(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := setupTestRegistry(t)
 	mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
 
-	t.Run("config error", func(t *testing.T) { //nolint:paralleltest // parent uses os.Chdir
+	t.Run("config error", func(t *testing.T) {
+		t.Parallel()
 		m := NewCLIManager(logger, &schema.Registry{}, nil, &MockGitter{}, nil)
 		err := m.TagDeployment(context.Background(), "prod")
 		require.Error(t, err)
 	})
 
-	t.Run("invalid environment", func(t *testing.T) { //nolint:paralleltest // parent uses os.Chdir
+	t.Run("invalid environment", func(t *testing.T) {
+		t.Parallel()
 		err := mgr.TagDeployment(context.Background(), "invalid")
 		require.Error(t, err)
 	})
 
-	t.Run("success without remote", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir
+	t.Run("success without remote", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
-		_ = exec.Command("git", "init", dir).Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.name", "t").Run()
-		_ = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run()
+		require.NoError(t, exec.Command("git", "init", dir).Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.name", "t").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run())
 
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
-		r, _ := schema.NewRegistry(dir, &mockCompiler{})
+		r, _ := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil)
-
-		origDir, _ := os.Getwd()
-		require.NoError(t, os.Chdir(dir))
-		defer func() { _ = os.Chdir(origDir) }()
 
 		// This calls g.TagDeploymentSuccess() which will fail push but return tagName
 		err := m.TagDeployment(context.Background(), "prod")
 		require.NoError(t, err) // We return nil if tag created but push fails
 	})
 
-	t.Run("git tag error", func(t *testing.T) { //nolint:paralleltest // manipulates PATH
-		dir := t.TempDir()
-		_ = exec.Command("git", "init", dir).Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run()
-		_ = exec.Command("git", "-C", dir, "config", "user.name", "t").Run()
-		_ = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run()
-
-		binDir := filepath.Join(dir, "bin")
-		require.NoError(t, os.Mkdir(binDir, 0o755))
-		realGit, _ := exec.LookPath("git")
-		gitScript := fmt.Sprintf(`#!/bin/sh
-if [ "$1" = "tag" ]; then exit 1; fi
-exec %s "$@"
-`, realGit)
-		//nolint:gosec // need executable permission for mock git
-		require.NoError(t, os.WriteFile(filepath.Join(binDir, "git"), []byte(gitScript), 0o755))
-
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
-		r, _ := schema.NewRegistry(dir, &mockCompiler{})
-		rcfg, _ := r.Config()
-		m := NewCLIManager(logger, r, nil, repo.NewCLIGitter(rcfg), nil)
-
-		origPath := os.Getenv("PATH")
-		_ = os.Setenv("PATH", binDir+":"+origPath)
-		defer func() { _ = os.Setenv("PATH", origPath) }()
+	t.Run("git tag error", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		mockGitter := &MockGitter{
+			TagDeploymentFunc: func(_ config.Env) (string, error) {
+				return "", fmt.Errorf("failed to create git tag")
+			},
+		}
+		m := NewCLIManager(logger, r, nil, mockGitter, nil)
 
 		err := m.TagDeployment(context.Background(), "prod")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create git tag")
 	})
 
-	t.Run("success with remote", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir
+	t.Run("success with remote", func(t *testing.T) {
+		t.Parallel()
 		// Setup a "remote"
 		remoteDir := t.TempDir()
 		require.NoError(t, exec.Command("git", "init", "--bare", remoteDir).Run())
 
 		repoDir := t.TempDir()
 		require.NoError(t, exec.Command("git", "init", repoDir).Run())
-		require.NoError(t, os.Chdir(repoDir))
-		require.NoError(t, exec.Command("git", "config", "user.email", "t@t.com").Run())
-		require.NoError(t, exec.Command("git", "config", "user.name", "t").Run())
-		require.NoError(t, exec.Command("git", "commit", "--allow-empty", "-m", "init").Run())
-		require.NoError(t, exec.Command("git", "remote", "add", "origin", remoteDir).Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "config", "user.email", "t@t.com").Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "config", "user.name", "t").Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "commit", "--allow-empty", "-m", "init").Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "remote", "add", "origin", remoteDir).Run())
 
 		cfgPath := filepath.Join(repoDir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(testConfigData), 0o600))
-		r, _ := schema.NewRegistry(repoDir, &mockCompiler{})
+		r, _ := schema.NewRegistry(repoDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil)
-
-		origDir, _ := os.Getwd()
-		t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 		err := m.TagDeployment(context.Background(), "prod")
 		require.NoError(t, err)
@@ -833,16 +724,16 @@ exec %s "$@"
 		assert.NotEmpty(t, output)
 	})
 
-	t.Run("tag created but push fails", func(t *testing.T) { //nolint:paralleltest // uses os.Chdir
+	t.Run("tag created but push fails", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		require.NoError(t, exec.Command("git", "init", dir).Run())
-		require.NoError(t, os.Chdir(dir))
-		require.NoError(t, exec.Command("git", "config", "user.email", "t@t.com").Run())
-		require.NoError(t, exec.Command("git", "config", "user.name", "t").Run())
-		require.NoError(t, exec.Command("git", "commit", "--allow-empty", "-m", "init").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.email", "t@t.com").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "config", "user.name", "t").Run())
+		require.NoError(t, exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run())
 
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
-		r, _ := schema.NewRegistry(dir, &mockCompiler{})
+		r, _ := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 
 		mockGitter := &MockGitter{
 			TagDeploymentFunc: func(_ config.Env) (string, error) {
@@ -851,9 +742,6 @@ exec %s "$@"
 		}
 
 		m := NewCLIManager(logger, r, nil, mockGitter, nil)
-
-		origDir, _ := os.Getwd()
-		t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 		err := m.TagDeployment(context.Background(), "prod")
 		require.NoError(t, err) // Should return nil if tag created but push failed

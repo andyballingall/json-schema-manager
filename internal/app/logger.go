@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
 const (
@@ -16,14 +18,24 @@ const (
 
 // setupLogger configures a logger that writes structured logs to a file
 // and clean, human-readable logs to the console.
-func setupLogger(stderr io.Writer, logLevel *slog.LevelVar, rd string) (*slog.Logger, io.Closer, error) {
+func setupLogger(
+	stderr io.Writer,
+	logLevel *slog.LevelVar,
+	rd string,
+	wd string,
+	envProvider fs.EnvProvider,
+) (*slog.Logger, io.Closer, error) {
 	// 1. Determine log file path
-	logPath := os.Getenv(LogEnvVar)
+	logPath := envProvider.Get(LogEnvVar)
 	if logPath == "" {
 		if rd != "" {
 			logPath = filepath.Join(rd, LogFile)
 		} else {
-			logPath = LogFile
+			if wd != "" {
+				logPath = filepath.Join(wd, LogFile)
+			} else {
+				logPath = LogFile
+			}
 		}
 	}
 
@@ -72,7 +84,6 @@ func (m *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
-//nolint:gocritic // slog.Record is passed by value in the interface
 func (m *multiHandler) Handle(ctx context.Context, record slog.Record) error {
 	for _, h := range m.handlers {
 		if h.Enabled(ctx, record.Level) {
@@ -110,7 +121,6 @@ func (c *consoleHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= c.level.Level()
 }
 
-//nolint:gocritic // slog.Record is passed by value in the interface
 func (c *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 	// Clean output for the console
 	switch {
