@@ -20,7 +20,7 @@ builds:
         goarch: arm64
     main: ./cmd/jsm/main.go
     ldflags:
-      - -s -w -X github.com/andyballingall/json-schema-manager/internal/cmd.Version={{.Version}}
+      - -s -w -X github.com/andyballingall/json-schema-manager/internal/app.Version={{.Version}}
 
 archives:
   - formats: [tar.gz]
