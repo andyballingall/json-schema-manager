@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
 		"jsm": func() {
 			ctx := context.Background()
-			if err := app.Run(ctx, os.Args, os.Stdout, os.Stderr); err != nil {
+			if err := app.Run(ctx, os.Args, os.Stdout, os.Stderr, nil); err != nil {
 				os.Exit(1)
 			}
 		},
@@ -95,7 +95,7 @@ func TestBinary_Help(t *testing.T) {
 	}
 	regDir := setupIntegrationRegistry(t)
 	cmd := exec.Command(binaryPath, "--help")
-	cmd.Env = append(os.Environ(), "JSM_ROOT_DIRECTORY="+regDir)
+	cmd.Env = append(os.Environ(), "JSM_REGISTRY_ROOT_DIR="+regDir)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -139,7 +139,7 @@ func TestBinary_Validate(t *testing.T) {
 	t.Run("valid schema", func(t *testing.T) {
 		t.Parallel()
 		cmd := exec.Command(binaryPath, "validate", schemaFile)
-		cmd.Env = append(os.Environ(), "JSM_ROOT_DIRECTORY="+regDir)
+		cmd.Env = append(os.Environ(), "JSM_REGISTRY_ROOT_DIR="+regDir)
 
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -153,7 +153,7 @@ func TestBinary_Validate(t *testing.T) {
 	t.Run("invalid schema command", func(t *testing.T) {
 		t.Parallel()
 		cmd := exec.Command(binaryPath, "validate", "/non/existent/path")
-		cmd.Env = append(os.Environ(), "JSM_ROOT_DIRECTORY="+regDir)
+		cmd.Env = append(os.Environ(), "JSM_REGISTRY_ROOT_DIR="+regDir)
 
 		errVal := cmd.Run()
 		assert.Error(t, errVal)

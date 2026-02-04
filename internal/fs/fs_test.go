@@ -49,30 +49,15 @@ func TestCanonicalPath(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, os.IsNotExist(err))
 	})
+}
 
-	t.Run("returns error when absFunc fails", func(t *testing.T) { //nolint:paralleltest // modifies global state
-		// Not parallel because it modifies global state
-		original := absFunc
-		defer func() { absFunc = original }()
+func TestAbs(t *testing.T) {
+	t.Parallel()
 
-		absFunc = func(_ string) (string, error) {
-			return "", os.ErrPermission
-		}
-
-		_, err := CanonicalPath("some/path")
-		assert.ErrorIs(t, err, os.ErrPermission)
-	})
-
-	t.Run("returns error when evalSymlinksFunc fails", func(t *testing.T) { //nolint:paralleltest // modifies global state
-		// Not parallel because it modifies global state
-		original := evalSymlinksFunc
-		defer func() { evalSymlinksFunc = original }()
-
-		evalSymlinksFunc = func(_ string) (string, error) {
-			return "", os.ErrPermission
-		}
-
-		_, err := CanonicalPath("/some/abs/path")
-		assert.ErrorIs(t, err, os.ErrPermission)
+	t.Run("returns absolute path", func(t *testing.T) {
+		t.Parallel()
+		abs, err := Abs("relative/path")
+		require.NoError(t, err)
+		assert.True(t, filepath.IsAbs(abs))
 	})
 }

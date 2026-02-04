@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
 const (
@@ -16,14 +18,24 @@ const (
 
 // setupLogger configures a logger that writes structured logs to a file
 // and clean, human-readable logs to the console.
-func setupLogger(stderr io.Writer, logLevel *slog.LevelVar, rd string) (*slog.Logger, io.Closer, error) {
+func setupLogger(
+	stderr io.Writer,
+	logLevel *slog.LevelVar,
+	rd string,
+	wd string,
+	envProvider fs.EnvProvider,
+) (*slog.Logger, io.Closer, error) {
 	// 1. Determine log file path
-	logPath := os.Getenv(LogEnvVar)
+	logPath := envProvider.Get(LogEnvVar)
 	if logPath == "" {
 		if rd != "" {
 			logPath = filepath.Join(rd, LogFile)
 		} else {
-			logPath = LogFile
+			if wd != "" {
+				logPath = filepath.Join(wd, LogFile)
+			} else {
+				logPath = LogFile
+			}
 		}
 	}
 

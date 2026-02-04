@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
 func TestNewRegistry(t *testing.T) { //nolint:gocognit // complex test setup
@@ -29,14 +30,12 @@ func TestNewRegistry(t *testing.T) { //nolint:gocognit // complex test setup
 			},
 			expectErr: func(t *testing.T, err error) {
 				t.Helper()
-				var target *RegistryRootNotFoundError
+				var target *RegistryInitError
 				if !errors.As(err, &target) {
-					t.Fatalf("expected RegistryRootNotFoundError, got %v", err)
+					t.Fatalf("expected RegistryInitError, got %v", err)
 				}
-				expected := "registry root not found: " + target.Path
-				if err.Error() != expected {
-					t.Errorf("expected error %q, got %q", expected, err.Error())
-				}
+				assert.Contains(t, err.Error(), "Registry could not be initialised")
+				assert.Contains(t, err.Error(), target.Path)
 			},
 		},
 		{
@@ -55,10 +54,8 @@ func TestNewRegistry(t *testing.T) { //nolint:gocognit // complex test setup
 				if !errors.As(err, &target) {
 					t.Fatalf("expected RegistryRootNotFolderError, got %v", err)
 				}
-				expected := "registry root is not a folder: " + target.Path
-				if err.Error() != expected {
-					t.Errorf("expected error %q, got %q", expected, err.Error())
-				}
+				assert.Contains(t, err.Error(), "Registry could not be initialised")
+				assert.Contains(t, err.Error(), "is not a directory")
 			},
 		},
 		{
@@ -83,9 +80,9 @@ func TestNewRegistry(t *testing.T) { //nolint:gocognit // complex test setup
 			},
 			expectErr: func(t *testing.T, err error) {
 				t.Helper()
-				var target *RegistryRootNotFoundError
+				var target *RegistryInitError
 				if !errors.As(err, &target) {
-					t.Fatalf("expected RegistryRootNotFoundError, got %v", err)
+					t.Fatalf("expected RegistryInitError, got %v", err)
 				}
 			},
 		},
@@ -138,7 +135,9 @@ environments:
 			t.Parallel()
 			path := tt.setup(t)
 			compiler := &mockCompiler{}
-			r, err := NewRegistry(path, compiler)
+			pathResolver := fs.NewPathResolver()
+			envProvider := fs.NewEnvProvider()
+			r, err := NewRegistry(path, compiler, pathResolver, envProvider)
 
 			if tt.expectErr != nil {
 				tt.expectErr(t, err)
@@ -645,34 +644,36 @@ func TestCreateSchemaVersion(t *testing.T) {
 }
 
 // Tests for os.Stat edge cases to achieve 100% coverage.
-func TestNewRegistry_StatErrAfterCanonicalPath(t *testing.T) { //nolint:paralleltest // modifies global state
-	// Save original
-	originalCanonicalPath := canonicalPath
-	defer func() { canonicalPath = originalCanonicalPath }()
+func TestNewRegistry_StatErrAfterCanonicalPath(t *testing.T) {
+	t.Parallel()
 
 	// Mock to return a valid-looking path that doesn't exist
 	// This simulates the race condition where file is deleted between
 	// canonicalPath and os.Stat
-	canonicalPath = func(_ string) (string, error) {
-		return "/path/that/definitely/does/not/exist/anywhere", nil
+	mockResolver := &mockPathResolver{
+		canonicalPathFn: func(_ string) (string, error) {
+			return "/path/that/definitely/does/not/exist/anywhere", nil
+		},
 	}
 
 	compiler := &mockCompiler{}
-	_, err := NewRegistry("/some/path", compiler)
+	envProvider := fs.NewEnvProvider()
+	_, err := NewRegistry("/some/path", compiler, mockResolver, envProvider)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no such file or directory")
 }
 
-func TestKeyFromSchemaPath_StatErrAfterCanonicalPath(t *testing.T) { //nolint:paralleltest // modifies global state
+func TestKeyFromSchemaPath_StatErrAfterCanonicalPath(t *testing.T) {
+	t.Parallel()
+
+	// First create a real registry, then replace its pathResolver
 	r := setupTestRegistry(t)
 
-	// Save original
-	originalCanonicalPath := canonicalPath
-	defer func() { canonicalPath = originalCanonicalPath }()
-
-	// Mock to return a valid-looking path that doesn't exist
-	canonicalPath = func(_ string) (string, error) {
-		return "/path/that/definitely/does/not/exist.schema.json", nil
+	// Replace the pathResolver with a mock that returns a non-existent path
+	r.pathResolver = &mockPathResolver{
+		canonicalPathFn: func(_ string) (string, error) {
+			return "/path/that/definitely/does/not/exist.schema.json", nil
+		},
 	}
 
 	_, err := r.KeyFromSchemaPath("/some/schema.json")
@@ -789,38 +790,27 @@ func TestGetSchemaByKey_DoubleCheck(t *testing.T) {
 	}
 }
 
-func TestRegistryDiscovery(t *testing.T) { //nolint:paralleltest // modifies global state
+func TestRegistryDiscovery(t *testing.T) {
+	t.Parallel()
+
 	// Setup a temporary directory for the tests
 	tmpDir := t.TempDir()
 
-	t.Run("discoverRootDirectory from env", func(t *testing.T) { //nolint:paralleltest // modifies global state
-		os.Setenv("JSM_ROOT_DIRECTORY", tmpDir)
-		defer os.Unsetenv("JSM_ROOT_DIRECTORY")
+	t.Run("initRootDirectory from env", func(t *testing.T) {
+		t.Parallel()
 
-		rd, err := discoverRootDirectory()
-		require.NoError(t, err)
-		assert.Equal(t, tmpDir, rd)
-	})
-
-	t.Run("discoverRootDirectory default", func(t *testing.T) { //nolint:paralleltest // modifies global state
-		os.Unsetenv("JSM_ROOT_DIRECTORY")
-
-		rd, err := discoverRootDirectory()
-		require.NoError(t, err)
-		cwd, _ := os.Getwd()
-		assert.Equal(t, cwd, rd)
-	})
-
-	t.Run("discoverRootDirectory getwd error", func(t *testing.T) { //nolint:paralleltest // modifies global state
-		os.Unsetenv("JSM_ROOT_DIRECTORY")
-		origGetwd := getwd
-		getwd = func() (string, error) {
-			return "", errors.New("getwd failure")
+		// Use mock env provider to inject the value
+		mockEnv := &mockEnvProvider{
+			values: map[string]string{
+				"JSM_REGISTRY_ROOT_DIR": tmpDir,
+			},
 		}
-		defer func() { getwd = origGetwd }()
+		pathResolver := fs.NewPathResolver()
 
-		_, err := discoverRootDirectory()
-		require.Error(t, err)
+		rd, err := initRootDirectory("", pathResolver, mockEnv)
+		require.NoError(t, err)
+		expected, _ := pathResolver.CanonicalPath(tmpDir)
+		assert.Equal(t, expected, rd)
 	})
 }
 
@@ -844,76 +834,20 @@ func TestRegistry_Accessors(t *testing.T) {
 	assert.Nil(t, cfg)
 }
 
-func TestNewRegistry_InternalDiscovery(t *testing.T) { //nolint:paralleltest // modifies global state
-	tmpDir := t.TempDir()
-	os.Setenv("JSM_ROOT_DIRECTORY", tmpDir)
-	defer os.Unsetenv("JSM_ROOT_DIRECTORY")
+func TestGetSchemaByKey_DoubleCheckCache(t *testing.T) {
+	t.Parallel()
+	reg := setupTestRegistry(t)
+	key := Key("domain_family_1_0_0")
+	createSchemaFiles(t, reg, schemaMap{key: "{}"})
 
-	// Create dummy config file with environments
-	cfgData := `
-environments:
-  prod:
-    privateUrlRoot: "https://json-schemas.internal.myorg.io/"
-    publicUrlRoot: "https://json-schemas.myorg.io/"
-    isProduction: true
-`
-	cfgPath := filepath.Join(tmpDir, config.JsmRegistryConfigFile)
-	if err := os.WriteFile(cfgPath, []byte(cfgData), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	// Fill cache manually for a different key to simulate some state
+	reg.mu.Lock()
+	reg.cache[Key("other_1_0_0")] = &Schema{}
+	reg.mu.Unlock()
 
-	compiler := &mockCompiler{}
-	r, err := NewRegistry("", compiler)
+	// Call GetSchemaByKey. The actual double-check is hard to hit without timing,
+	// but we can at least ensure the method works and covers the lines.
+	s, err := reg.GetSchemaByKey(key)
 	require.NoError(t, err)
-
-	expected, _ := canonicalPath(tmpDir)
-	assert.Equal(t, expected, r.RootDirectory())
-}
-
-func TestNewRegistry_DiscoveryFailure(t *testing.T) { //nolint:paralleltest // modifies global state
-	os.Unsetenv("JSM_ROOT_DIRECTORY")
-	origGetwd := getwd
-	getwd = func() (string, error) {
-		return "", errors.New("getwd failure")
-	}
-	defer func() { getwd = origGetwd }()
-
-	compiler := &mockCompiler{}
-	_, err := NewRegistry("", compiler)
-	require.Error(t, err)
-	require.EqualError(t, err, "getwd failure")
-}
-
-func TestDiscoverRootDirectory_Upward(t *testing.T) { //nolint:paralleltest // modifies global state
-	origEnv := os.Getenv("JSM_ROOT_DIRECTORY")
-	os.Unsetenv("JSM_ROOT_DIRECTORY")
-	defer os.Setenv("JSM_ROOT_DIRECTORY", origEnv)
-
-	tmpDir, _ := filepath.EvalSymlinks(t.TempDir())
-	regDir := filepath.Join(tmpDir, "registry")
-	subDir := filepath.Join(regDir, "a", "b", "c")
-	require.NoError(t, os.MkdirAll(subDir, 0o755))
-
-	// Create config in regDir
-	content := `
-environments:
-  prod:
-    privateUrlRoot: "https://json-schemas.internal.myorg.io/"
-    publicUrlRoot: "https://json-schemas.myorg.io/"
-    isProduction: true
-`
-	require.NoError(t, os.WriteFile(filepath.Join(regDir, config.JsmRegistryConfigFile), []byte(content), 0o600))
-
-	origGetwd := getwd
-	getwd = func() (string, error) {
-		return subDir, nil
-	}
-	defer func() { getwd = origGetwd }()
-
-	rd, err := discoverRootDirectory()
-	require.NoError(t, err)
-
-	expected, _ := canonicalPath(regDir)
-	actual, _ := canonicalPath(rd)
-	assert.Equal(t, expected, actual)
+	assert.NotNil(t, s)
 }

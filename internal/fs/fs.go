@@ -1,24 +1,16 @@
 package fs
 
-import (
-	"path/filepath"
-)
-
-var (
-	absFunc          = filepath.Abs
-	evalSymlinksFunc = filepath.EvalSymlinks
-)
+// defaultResolver is used by the package-level CanonicalPath function.
+var defaultResolver = NewPathResolver()
 
 // CanonicalPath returns the canonical, absolute path by resolving symlinks.
+// This is a convenience function that uses the default StandardPathResolver.
 func CanonicalPath(path string) (string, error) {
-	abs, err := absFunc(path)
-	if err != nil {
-		return "", err
-	}
+	return defaultResolver.CanonicalPath(path)
+}
 
-	cp, err := evalSymlinksFunc(abs)
-	if err != nil {
-		return "", err
-	}
-	return cp, nil
+// Abs returns the absolute path.
+// This is a convenience function that uses the default StandardPathResolver.
+func Abs(path string) (string, error) {
+	return defaultResolver.Abs(path)
 }

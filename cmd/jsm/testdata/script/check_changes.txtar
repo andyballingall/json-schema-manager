@@ -15,7 +15,7 @@ exec git commit -m "first"
 exec git tag jsm-deploy/production/v1
 
 # Run our check-changes command (should be empty/clean)
-env JSM_ROOT_DIRECTORY=registry
+env JSM_REGISTRY_ROOT_DIR=registry
 exec jsm check-changes production
 stdout 'All changes are valid'
 

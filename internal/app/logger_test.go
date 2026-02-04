@@ -12,109 +12,158 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
 func TestSetupLogger(t *testing.T) {
-	t.Run("success with rd", //nolint:paralleltest // uses os.Unsetenv
-		func(t *testing.T) {
-			os.Unsetenv(LogEnvVar)
-			tempDir := t.TempDir()
-			logLevel := &slog.LevelVar{}
-			stderr := &bytes.Buffer{}
-			logger, closer, err := setupLogger(stderr, logLevel, tempDir)
-			require.NoError(t, err)
-			defer closer.Close()
-			assert.NotNil(t, logger)
-			assert.FileExists(t, filepath.Join(tempDir, LogFile))
-		})
+	t.Parallel()
 
-	t.Run("success with no rd", //nolint:paralleltest // uses os.Unsetenv
-		func(t *testing.T) {
-			os.Unsetenv(LogEnvVar)
+	t.Run("success with rd", func(t *testing.T) {
+		t.Parallel()
+		tempDir := t.TempDir()
+		logLevel := &slog.LevelVar{}
+		stderr := &bytes.Buffer{}
+		envProvider := fs.NewEnvProvider()
+		logger, closer, err := setupLogger(stderr, logLevel, tempDir, "", envProvider)
+		require.NoError(t, err)
+		defer closer.Close()
+		assert.NotNil(t, logger)
+		assert.FileExists(t, filepath.Join(tempDir, LogFile))
+	})
+
+	t.Run("success with no rd", func(t *testing.T) {
+		t.Parallel()
+		tempDir := t.TempDir()
+		// Use a temp file in a temp dir to avoid polluting current dir
+		logFile := filepath.Join(tempDir, LogFile)
+		logLevel := &slog.LevelVar{}
+		stderr := &bytes.Buffer{}
+		envProvider := &mockEnvProvider{values: map[string]string{LogEnvVar: logFile}}
+		logger, closer, err := setupLogger(stderr, logLevel, "", "", envProvider)
+		require.NoError(t, err)
+		defer closer.Close()
+		assert.NotNil(t, logger)
+		assert.FileExists(t, logFile)
+	})
+
+	t.Run("success with file", func(t *testing.T) {
+		t.Parallel()
+		tempDir := t.TempDir()
+		logLevel := &slog.LevelVar{}
+		logLevel.Set(slog.LevelInfo)
+		stderr := &bytes.Buffer{}
+		envProvider := fs.NewEnvProvider()
+
+		logger, closer, err := setupLogger(stderr, logLevel, tempDir, "", envProvider)
+		require.NoError(t, err)
+		require.NotNil(t, logger)
+		require.NotNil(t, closer)
+		defer closer.Close()
+
+		logger.Info("test message", "key", "value")
+
+		// Check console output
+		assert.Contains(t, stderr.String(), "test message")
+		assert.NotContains(t, stderr.String(), "key=value") // Info doesn't show attrs by default
+
+		// Check file output
+		logFile := filepath.Join(tempDir, ".jsm.log")
+		data, err := os.ReadFile(logFile)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"msg":"test message"`)
+		assert.Contains(t, string(data), `"key":"value"`)
+	})
+
+	t.Run("success with env var override", func(t *testing.T) {
+		t.Parallel()
+		tempDir := t.TempDir()
+		logFile := filepath.Join(tempDir, "custom.log")
+		envProvider := &mockEnvProvider{values: map[string]string{LogEnvVar: logFile}}
+
+		logLevel := &slog.LevelVar{}
+		stderr := &bytes.Buffer{}
+
+		logger, closer, err := setupLogger(stderr, logLevel, "", "", envProvider)
+		require.NoError(t, err)
+		defer closer.Close()
+
+		logger.Info("custom log")
+		data, _ := os.ReadFile(logFile)
+		assert.Contains(t, string(data), "custom log")
+	})
+
+	t.Run("fallback on file error", func(t *testing.T) {
+		t.Parallel()
+		logLevel := &slog.LevelVar{}
+		stderr := &bytes.Buffer{}
+		envProvider := fs.NewEnvProvider()
+
+		// Point to a non-existent directory that cannot be created
+		logger, closer, err := setupLogger(stderr, logLevel, "/non/existent/path/unwritable", "", envProvider)
+		require.Error(t, err)
+		assert.Nil(t, closer)
+		assert.NotNil(t, logger)
+
+		logger.Info("fallback message")
+		assert.Contains(t, stderr.String(), "fallback message")
+	})
+
+	t.Run("default log path when rd and env are empty", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		logLevel := &slog.LevelVar{}
+		stderr := &bytes.Buffer{}
+		envProvider := &mockEnvProvider{values: map[string]string{}}
+
+		// rd is empty, should use LogFile in wd (which we set to tmpDir)
+		logger, closer, err := setupLogger(stderr, logLevel, "", tmpDir, envProvider)
+		require.NoError(t, err)
+		defer closer.Close()
+
+		logger.Info("default log")
+		assert.FileExists(t, filepath.Join(tmpDir, LogFile))
+	})
+
+	t.Run("full fallback when rd, wd, and env are empty", func(t *testing.T) {
+		t.Parallel()
+		// This will use current directory's .jsm.log
+		// We should clean it up if it's created, but better to check the path logic.
+		logLevel := &slog.LevelVar{}
+		stderr := &bytes.Buffer{}
+		envProvider := &mockEnvProvider{values: map[string]string{}}
+
+		// Note: This might fail if the current directory is unwritable, but in tests it usually is.
+		// To be safe, we don't necessarily need to RUN it, just check the code path if we could.
+		// But let's try to run it and cleanup.
+		logger, closer, err := setupLogger(stderr, logLevel, "", "", envProvider)
+		if err == nil {
+			defer closer.Close()
 			defer os.Remove(LogFile)
-			logLevel := &slog.LevelVar{}
-			stderr := &bytes.Buffer{}
-			logger, closer, err := setupLogger(stderr, logLevel, "")
-			require.NoError(t, err)
-			defer closer.Close()
-			assert.NotNil(t, logger)
-			assert.FileExists(t, LogFile)
-		})
+		}
+		assert.NotNil(t, logger)
+	})
 
-	t.Run("success with file", //nolint:paralleltest // uses temp file
-		func(t *testing.T) {
-			tempDir := t.TempDir()
-			logLevel := &slog.LevelVar{}
-			logLevel.Set(slog.LevelInfo)
-			stderr := &bytes.Buffer{}
+	t.Run("error opening log file", func(t *testing.T) {
+		t.Parallel()
+		tempDir := t.TempDir()
+		logFile := filepath.Join(tempDir, "read-only.log")
+		//nolint:gosec // intentional read-only file for testing error handling
+		require.NoError(t, os.WriteFile(logFile, []byte(""), 0o444))
 
-			logger, closer, err := setupLogger(stderr, logLevel, tempDir)
-			require.NoError(t, err)
-			require.NotNil(t, logger)
-			require.NotNil(t, closer)
-			defer closer.Close()
+		logLevel := &slog.LevelVar{}
+		stderr := &bytes.Buffer{}
+		envProvider := &mockEnvProvider{values: map[string]string{LogEnvVar: logFile}}
 
-			logger.Info("test message", "key", "value")
+		logger, closer, err := setupLogger(stderr, logLevel, "", "", envProvider)
+		require.Error(t, err)
+		assert.Nil(t, closer)
+		assert.NotNil(t, logger)
 
-			// Check console output
-			assert.Contains(t, stderr.String(), "test message")
-			assert.NotContains(t, stderr.String(), "key=value") // Info doesn't show attrs by default
-
-			// Check file output
-			logFile := filepath.Join(tempDir, ".jsm.log")
-			data, err := os.ReadFile(logFile)
-			require.NoError(t, err)
-			assert.Contains(t, string(data), `"msg":"test message"`)
-			assert.Contains(t, string(data), `"key":"value"`)
-		})
-
-	t.Run("success with env var override",
-		func(t *testing.T) {
-			tempDir := t.TempDir()
-			logFile := filepath.Join(tempDir, "custom.log")
-			t.Setenv(LogEnvVar, logFile)
-
-			logLevel := &slog.LevelVar{}
-			stderr := &bytes.Buffer{}
-
-			logger, closer, err := setupLogger(stderr, logLevel, "")
-			require.NoError(t, err)
-			defer closer.Close()
-
-			logger.Info("custom log")
-			data, _ := os.ReadFile(logFile)
-			assert.Contains(t, string(data), "custom log")
-		})
-
-	t.Run("success with empty rd", //nolint:paralleltest // uses cleanup
-		func(t *testing.T) {
-			// This will create .jsm.log in the current directory, which is fine for a test that cleans up
-			defer os.Remove(".jsm.log")
-
-			logLevel := &slog.LevelVar{}
-			stderr := &bytes.Buffer{}
-			logger, closer, err := setupLogger(stderr, logLevel, "")
-			require.NoError(t, err)
-			defer closer.Close()
-
-			logger.Info("empty rd")
-			assert.FileExists(t, ".jsm.log")
-		})
-
-	t.Run("fallback on file error", //nolint:paralleltest // uses files
-		func(t *testing.T) {
-			logLevel := &slog.LevelVar{}
-			stderr := &bytes.Buffer{}
-
-			// Point to a non-existent directory that cannot be created
-			logger, closer, err := setupLogger(stderr, logLevel, "/non/existent/path/unwritable")
-			require.Error(t, err)
-			assert.Nil(t, closer)
-			assert.NotNil(t, logger)
-
-			logger.Info("fallback message")
-			assert.Contains(t, stderr.String(), "fallback message")
-		})
+		logger.Info("read-only fallback")
+		assert.Contains(t, stderr.String(), "read-only fallback")
+	})
 }
 
 func TestConsoleHandler_Thorough(t *testing.T) {
@@ -228,4 +277,16 @@ func TestMultiHandler_Thorough(t *testing.T) {
 		m4 := m3.WithGroup("g")
 		assert.IsType(t, &multiHandler{}, m4)
 	})
+}
+
+// mockEnvProvider is a test implementation of fs.EnvProvider.
+type mockEnvProvider struct {
+	values map[string]string
+}
+
+func (m *mockEnvProvider) Get(key string) string {
+	if m.values == nil {
+		return ""
+	}
+	return m.values[key]
 }

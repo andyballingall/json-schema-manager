@@ -179,7 +179,7 @@ func (a *TargetResolver) resolveIDtoKey(idStr string) (Key, error) {
 
 // resolvePathToScope converts an absolute or relative directory path to a SearchScope.
 func (a *TargetResolver) resolvePathToScope(path string) (SearchScope, error) {
-	cp, err := canonicalPath(path)
+	cp, err := a.registry.pathResolver.CanonicalPath(path)
 	if err != nil {
 		return "", err
 	}

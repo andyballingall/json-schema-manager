@@ -18,6 +18,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
@@ -134,7 +135,7 @@ func createRegistry(t *testing.T, tmpDir, cfgData string) *Registry {
 		t.Fatalf("failed to write registry config file: %v", err)
 	}
 	compiler := &mockCompiler{}
-	r, err := NewRegistry(tmpDir, compiler)
+	r, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
 	if err != nil {
 		t.Fatalf("failed to create registry: %v", err)
 	}
@@ -728,7 +729,7 @@ environments:
 			}
 
 			compiler := &mockCompiler{}
-			registry, err := NewRegistry(tmpDir, compiler)
+			registry, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
 			require.NoError(t, err)
 
 			// Construct a schema with necessary fields
@@ -1524,7 +1525,7 @@ environments:
 			}
 
 			compiler := &mockCompiler{}
-			registry, err := NewRegistry(tmpDir, compiler)
+			registry, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
 			require.NoError(t, err)
 
 			// Construct a schema with necessary fields
@@ -1701,7 +1702,7 @@ environments:
 			}
 
 			compiler := &mockCompiler{}
-			registry, err := NewRegistry(tmpDir, compiler)
+			registry, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
 			require.NoError(t, err)
 
 			// Construct a schema with necessary fields

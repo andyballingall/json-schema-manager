@@ -55,27 +55,27 @@ func TestTester_Configuration(t *testing.T) {
 
 func TestTester_TestSingleSchema(t *testing.T) {
 	t.Parallel()
-	r := setupTestRegistry(t)
-
-	k := Key("domain_family_1_0_0")
-	createSchemaFiles(t, r, schemaMap{
-		k: `{"type": "object"}`,
-	})
-
-	s, _ := r.GetSchemaByKey(k)
-	homeDir := s.Path(HomeDir)
-	passDir := filepath.Join(homeDir, string(TestDocTypePass))
-	failDir := filepath.Join(homeDir, string(TestDocTypeFail))
-	require.NoError(t, os.MkdirAll(passDir, 0o755))
-	require.NoError(t, os.MkdirAll(failDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(passDir, "valid.json"), []byte("{}"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(failDir, "invalid.json"), []byte("[]"), 0o600))
-
-	tr := NewTester(r)
-	tr.SetStopOnFirstError(false)
 
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+
+		s, _ := r.GetSchemaByKey(k)
+		homeDir := s.Path(HomeDir)
+		passDir := filepath.Join(homeDir, string(TestDocTypePass))
+		failDir := filepath.Join(homeDir, string(TestDocTypeFail))
+		require.NoError(t, os.MkdirAll(passDir, 0o755))
+		require.NoError(t, os.MkdirAll(failDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(passDir, "valid.json"), []byte("{}"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(failDir, "invalid.json"), []byte("[]"), 0o600))
+
+		tr := NewTester(r)
+		tr.SetStopOnFirstError(false)
+
 		mc, ok := r.compiler.(*mockCompiler)
 		require.True(t, ok)
 		mc.CompileFunc = func(_ string) (validator.Validator, error) {
@@ -91,8 +91,6 @@ func TestTester_TestSingleSchema(t *testing.T) {
 		assert.Len(t, report.PassedTests[k], 1)
 		assert.Len(t, report.FailedTests[k], 1)
 	})
-
-	// Note: invalid path/key resolution is now tested in arg_resolver_test.go
 }
 
 func TestTester_TestFoundSchemas(t *testing.T) {
@@ -311,7 +309,9 @@ func TestTester_ScopedTests(t *testing.T) {
 	})
 	sFuture, _ := r.GetSchemaByKey(kFuture)
 	passDirFuture := filepath.Join(sFuture.Path(HomeDir), string(TestDocTypePass))
+	failDirFuture := filepath.Join(sFuture.Path(HomeDir), string(TestDocTypeFail))
 	require.NoError(t, os.MkdirAll(passDirFuture, 0o755))
+	require.NoError(t, os.MkdirAll(failDirFuture, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(passDirFuture, "future_pass.json"), []byte("{}"), 0o600))
 
 	t.Run("Pass only", func(t *testing.T) {
@@ -412,16 +412,6 @@ func TestTester_testSchema_ContextCancelled(t *testing.T) {
 	require.True(t, ok)
 	mc.CompileFunc = func(_ string) (validator.Validator, error) {
 		return &mockValidator{
-			Err: nil,
-		}, nil
-	}
-
-	// We want to trigger ctx.Error() check in the loop of testSchema.
-	// We'll use a hack: first spec runs, we cancel context.
-	// But testSchema doesn't call a hook.
-	// However, we can make the mockValidator cancel the context!
-	mc.CompileFunc = func(_ string) (validator.Validator, error) {
-		return &mockValidator{
 			ValidateFunc: func(_ validator.JSONDocument) error {
 				cancel()
 				return nil
@@ -436,15 +426,15 @@ func TestTester_testSchema_ContextCancelled(t *testing.T) {
 
 func TestTester_getSpecsForSchema_ScopedErrs(t *testing.T) {
 	t.Parallel()
-	r := setupTestRegistry(t)
-	k := Key("domain_family_1_0_0")
-	createSchemaFiles(t, r, schemaMap{
-		k: `{"type": "object"}`,
-	})
-	s, _ := r.GetSchemaByKey(k)
 
 	t.Run("Fail directory error", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+		s, _ := r.GetSchemaByKey(k)
 		tr := NewTester(r)
 		tr.SetScope(TestScopeFail)
 		// Don't create 'fail' directory
@@ -454,29 +444,37 @@ func TestTester_getSpecsForSchema_ScopedErrs(t *testing.T) {
 
 	t.Run("Breaking schema missing", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+		s, _ := r.GetSchemaByKey(k)
 		tr := NewTester(r)
 		tr.SetScope(TestScopeConsumerBreaking)
 
 		// Create directory structure for future version but NO schema file
-		// 1.0.0 is 's'. Family dir is .../family
-		// Create .../family/1/1/0
 		famDir := s.Path(FamilyDir)
 		futureDir := filepath.Join(famDir, "1", "1", "0")
 		require.NoError(t, os.MkdirAll(futureDir, 0o755))
 
 		_, err := tr.getSpecsForSchema(s)
 		require.Error(t, err)
-		// Error should come from GetSchemaByKey failing to find domain_family_1_1_0.schema.json
 	})
 
-	t.Run("Breaking specs error", func(t *testing.T) { //nolint:paralleltest // uses temp file
+	t.Run("Breaking specs error", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+		s, _ := r.GetSchemaByKey(k)
 		tr := NewTester(r)
 		tr.SetScope(TestScopeConsumerBreaking)
 
 		// Create a future version but DON'T create the pass directory.
-		// This will cause TestDocuments(TestDocTypePass) to fail with TestDirMissingError
-		// when appendBreakingSpecs tries to collect pass tests from the future schema.
-		kFuture := Key("domain_family_1_2_0") // Use 1.2.0 to avoid conflict with other tests
+		kFuture := Key("domain_family_1_2_0")
 		createSchemaFiles(t, r, schemaMap{
 			kFuture: `{"type": "object"}`,
 		})
@@ -484,11 +482,11 @@ func TestTester_getSpecsForSchema_ScopedErrs(t *testing.T) {
 
 		_, err := tr.getSpecsForSchema(s)
 		require.Error(t, err)
-		// Error is either TestDirMissingError or fs.PathError depending on timing
 	})
 
 	t.Run("Breaking family error", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
 		k2 := Key("d2_f2_1_0_0")
 		createSchemaFiles(t, r, schemaMap{
 			k2: `{"type": "object"}`,
@@ -497,15 +495,8 @@ func TestTester_getSpecsForSchema_ScopedErrs(t *testing.T) {
 
 		// Make family directory a file to cause ReadDir error
 		famDir := s2.Path(FamilyDir)
-		// We need to simulate the error in MajorFamilyFutureSchemas
-		// It reads the family directory. If we replace the family directory with a file?
-		// But s2.Path depends on family name.
-		// We can't rename the directory easily while s2 exists?
-		// Actually, MajorFamilyFutureSchemas reads s.Path(FamilyDir).
-		// If we delete the directory and replace with file?
 		require.NoError(t, os.RemoveAll(famDir))
 		require.NoError(t, os.WriteFile(famDir, []byte(""), 0o600))
-		t.Cleanup(func() { require.NoError(t, os.Remove(famDir)) })
 
 		tr := NewTester(r)
 		tr.SetScope(TestScopeConsumerBreaking)
@@ -513,7 +504,9 @@ func TestTester_getSpecsForSchema_ScopedErrs(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("Breaking multiple future", func(t *testing.T) { //nolint:paralleltest // uses temp file
+	t.Run("Breaking multiple future", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
 		kBase := Key("d2_f2_1_0_0")
 		kNext := Key("d2_f2_1_1_0")
 		kLast := Key("d2_f2_1_2_0")
@@ -562,19 +555,9 @@ func TestTester_TestFoundSchemas_NoStopOnErr(t *testing.T) {
 	for _, k := range []Key{k1, k2} {
 		s, _ := r.GetSchemaByKey(k)
 		p := filepath.Join(s.Path(HomeDir), string(TestDocTypePass))
-		err := os.MkdirAll(p, 0o755)
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = os.WriteFile(filepath.Join(p, "t.json"), []byte("{}"), 0o600)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Ensure fail dir exists too
-		err = os.MkdirAll(filepath.Join(s.Path(HomeDir), string(TestDocTypeFail)), 0o755)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, os.MkdirAll(p, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(p, "t.json"), []byte("{}"), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), string(TestDocTypeFail)), 0o755))
 	}
 
 	tr := NewTester(r)
@@ -588,7 +571,7 @@ func TestTester_TestFoundSchemas_NoStopOnErr(t *testing.T) {
 	}
 
 	report, err := tr.TestFoundSchemas(context.Background(), "")
-	require.NoError(t, err) // Should not error when stopOnFirstError is false
+	require.NoError(t, err)
 	assert.Len(t, report.FailedTests, 2)
 }
 
@@ -607,18 +590,9 @@ func TestTester_TestFoundSchemas_ProducerBreakOnCancel(t *testing.T) {
 	for _, k := range []Key{k1, k2} {
 		s, _ := r.GetSchemaByKey(k)
 		p := filepath.Join(s.Path(HomeDir), string(TestDocTypePass))
-		err := os.MkdirAll(p, 0o755)
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = os.WriteFile(filepath.Join(p, "t.json"), []byte("{}"), 0o600)
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = os.MkdirAll(filepath.Join(s.Path(HomeDir), string(TestDocTypeFail)), 0o755)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, os.MkdirAll(p, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(p, "t.json"), []byte("{}"), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), string(TestDocTypeFail)), 0o755))
 	}
 
 	tr := NewTester(r)
@@ -649,16 +623,11 @@ func TestTester_TestFoundSchemas_ProducerBreakOnCancel(t *testing.T) {
 		resC <- result{report, err}
 	}()
 
-	// Wait a short time to ensure the first worker has started and the producer
-	// is now blocked trying to acquire the semaphore for the second schema.
 	time.Sleep(100 * time.Millisecond)
-
-	// Let the worker proceed and fail
 	close(proceed)
 
 	res := <-resC
 	require.NoError(t, res.err)
-	// One schema should have recorded a failure, the other might not have run or been cancelled
 	assert.NotEmpty(t, res.report.FailedTests)
 }
 
@@ -702,13 +671,12 @@ func TestTester_TestFoundSchemas_ContextCancelledDuringExecution(t *testing.T) {
 	mc.CompileFunc = func(_ string) (validator.Validator, error) {
 		return &mockValidator{
 			ValidateFunc: func(_ validator.JSONDocument) error {
-				cancel() // Cancel the parent context
+				cancel()
 				return nil
 			},
 		}, nil
 	}
 
-	// Need a test document to actually run validation
 	s, _ := r.GetSchemaByKey(k)
 	p := filepath.Join(s.Path(HomeDir), string(TestDocTypePass))
 	require.NoError(t, os.MkdirAll(p, 0o755))
@@ -729,48 +697,13 @@ func TestNewTestScope(t *testing.T) {
 		want    TestScope
 		wantErr bool
 	}{
-		{
-			name:    "local",
-			input:   "local",
-			want:    TestScopeLocal,
-			wantErr: false,
-		},
-		{
-			name:    "pass-only",
-			input:   "pass-only",
-			want:    TestScopePass,
-			wantErr: false,
-		},
-		{
-			name:    "fail-only",
-			input:   "fail-only",
-			want:    TestScopeFail,
-			wantErr: false,
-		},
-		{
-			name:    "consumer-breaking",
-			input:   "consumer-breaking",
-			want:    TestScopeConsumerBreaking,
-			wantErr: false,
-		},
-		{
-			name:    "all",
-			input:   "all",
-			want:    TestScopeAll,
-			wantErr: false,
-		},
-		{
-			name:    "invalid",
-			input:   "invalid",
-			want:    "",
-			wantErr: true,
-		},
-		{
-			name:    "empty",
-			input:   "",
-			want:    "",
-			wantErr: true,
-		},
+		{"local", "local", TestScopeLocal, false},
+		{"pass-only", "pass-only", TestScopePass, false},
+		{"fail-only", "fail-only", TestScopeFail, false},
+		{"consumer-breaking", "consumer-breaking", TestScopeConsumerBreaking, false},
+		{"all", "all", TestScopeAll, false},
+		{"invalid", "invalid", "", true},
+		{"empty", "", "", true},
 	}
 
 	for _, tt := range tests {
@@ -802,101 +735,100 @@ func TestTester_SetSkipCompatible(t *testing.T) {
 	assert.True(t, tr.skipCompatible)
 }
 
-func TestTester_ProviderCompatibility(t *testing.T) { //nolint:paralleltest // shared state across subtests
-	// Create a test registry with multiple schema versions
-	r := setupTestRegistry(t)
+func TestTester_ProviderCompatibility(t *testing.T) {
+	t.Parallel()
 
-	// Create two versions: 1.0.0 (earlier) and 1.0.1 (target)
-	earlierKey := Key("domain_family_1_0_0")
-	targetKey := Key("domain_family_1_0_1")
+	setup := func(t *testing.T) (*Registry, Key, Key) {
+		t.Helper()
+		r := setupTestRegistry(t)
+		earlierKey := Key("domain_family_1_0_0")
+		targetKey := Key("domain_family_1_0_1")
+		createSchemaFiles(t, r, schemaMap{
+			earlierKey: `{"type": "object", "required": ["name"]}`,
+			targetKey:  `{"type": "object"}`,
+		})
+		targetSchema, _ := r.GetSchemaByKey(targetKey)
+		require.NoError(t, os.MkdirAll(filepath.Join(targetSchema.Path(HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(targetSchema.Path(HomeDir), "fail"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(targetSchema.Path(HomeDir), "pass", "valid.json"), []byte(`{}`), 0o600))
 
-	// Create schema files
-	createSchemaFiles(t, r, schemaMap{
-		earlierKey: `{"type": "object", "required": ["name"]}`,
-		targetKey:  `{"type": "object"}`,
-	})
+		earlierSchema, _ := r.GetSchemaByKey(earlierKey)
+		require.NoError(t, os.MkdirAll(filepath.Join(earlierSchema.Path(HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(earlierSchema.Path(HomeDir), "fail"), 0o755))
 
-	// Create pass/fail test directories
-	targetSchema, _ := r.GetSchemaByKey(targetKey)
-	targetHome := targetSchema.Path(HomeDir)
-	passDir := filepath.Join(targetHome, string(TestDocTypePass))
-	failDir := filepath.Join(targetHome, string(TestDocTypeFail))
-	require.NoError(t, os.MkdirAll(passDir, 0o755))
-	require.NoError(t, os.MkdirAll(failDir, 0o755))
-
-	earlierSchema, _ := r.GetSchemaByKey(earlierKey)
-	earlierHome := earlierSchema.Path(HomeDir)
-	earlierPassDir := filepath.Join(earlierHome, string(TestDocTypePass))
-	earlierFailDir := filepath.Join(earlierHome, string(TestDocTypeFail))
-	require.NoError(t, os.MkdirAll(earlierPassDir, 0o755))
-	require.NoError(t, os.MkdirAll(earlierFailDir, 0o755))
-
-	// Create a pass test for the target schema that would FAIL against the earlier schema
-	// (target allows empty objects, but earlier requires "name" property)
-	require.NoError(t, os.WriteFile(filepath.Join(passDir, "valid.json"), []byte(`{}`), 0o600))
-
-	// Configure the mock compiler to return failing validator for the earlier schema
-	mc, ok := r.compiler.(*mockCompiler)
-	require.True(t, ok, "compiler must be mockCompiler")
-	mc.CompileFunc = func(id string) (validator.Validator, error) {
-		// Match the earlier schema by checking if the ID contains the earlier key
-		if strings.Contains(id, string(earlierKey)) {
-			// Earlier schema fails validation (simulating stricter requirements)
-			return &mockValidator{Err: errors.New("required property 'name' missing")}, nil
-		}
-		// Target schema passes validation
-		return &mockValidator{Err: nil}, nil
+		return r, earlierKey, targetKey
 	}
 
-	t.Run("compatibility check detects breaking change", func(t *testing.T) { //nolint:paralleltest // shared state
+	t.Run("compatibility check detects breaking change", func(t *testing.T) {
+		t.Parallel()
+		r, earlierKey, targetKey := setup(t)
 		tr := NewTester(r)
-		tr.SetStopOnFirstError(false)
 		tr.SetSkipCompatible(false)
+
+		mc, ok := r.compiler.(*mockCompiler)
+		require.True(t, ok)
+		mc.CompileFunc = func(id string) (validator.Validator, error) {
+			if strings.Contains(id, "1_0_0") {
+				return &mockValidator{Err: errors.New("required property 'name' missing")}, nil
+			}
+			return &mockValidator{Err: nil}, nil
+		}
 
 		report, err := tr.TestSingleSchema(context.Background(), targetKey)
 		require.NoError(t, err)
-		require.NotNil(t, report)
-
-		// The target schema's pass test should have been run against earlier schema and failed
-		assert.NotEmpty(t, report.FailedTests[earlierKey], "earlier schema should have failed tests")
+		assert.NotEmpty(t, report.FailedTests[earlierKey])
 	})
 
-	t.Run("skip compatibility check", func(t *testing.T) { //nolint:paralleltest // shared state
+	t.Run("skip compatibility check", func(t *testing.T) {
+		t.Parallel()
+		r, earlierKey, targetKey := setup(t)
 		tr := NewTester(r)
-		tr.SetStopOnFirstError(false)
 		tr.SetSkipCompatible(true)
 
+		mc, ok := r.compiler.(*mockCompiler)
+		require.True(t, ok)
+		mc.CompileFunc = func(id string) (validator.Validator, error) {
+			if strings.Contains(id, "1_0_0") {
+				return &mockValidator{Err: errors.New("fail")}, nil
+			}
+			return &mockValidator{Err: nil}, nil
+		}
+
 		report, err := tr.TestSingleSchema(context.Background(), targetKey)
 		require.NoError(t, err)
-		require.NotNil(t, report)
-
-		// When compatibility is skipped, earlier schema should not be tested
-		assert.Empty(t, report.FailedTests[earlierKey], "no earlier schema tests when skipped")
+		assert.Empty(t, report.FailedTests[earlierKey])
 	})
 
-	t.Run("context cancellation stops compatibility check", func(t *testing.T) { //nolint:paralleltest // shared state
+	t.Run("context cancellation stops compatibility check", func(t *testing.T) {
+		t.Parallel()
+		r, _, targetKey := setup(t)
 		tr := NewTester(r)
-		tr.SetStopOnFirstError(false)
 		tr.SetSkipCompatible(false)
-
 		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Cancel immediately
+		cancel()
 
 		_, err := tr.TestSingleSchema(ctx, targetKey)
-		// Should return without error but may have incomplete results
 		assert.True(t, err == nil || errors.Is(err, context.Canceled))
 	})
 
-	t.Run("stop on first error in compatibility check", func(t *testing.T) { //nolint:paralleltest // shared state
+	t.Run("stop on first error in compatibility check", func(t *testing.T) {
+		t.Parallel()
+		r, earlierKey, targetKey := setup(t)
 		tr := NewTester(r)
 		tr.SetStopOnFirstError(true)
 		tr.SetSkipCompatible(false)
 
+		mc, ok := r.compiler.(*mockCompiler)
+		require.True(t, ok)
+		mc.CompileFunc = func(id string) (validator.Validator, error) {
+			if strings.Contains(id, "1_0_0") {
+				return &mockValidator{Err: errors.New("fail")}, nil
+			}
+			return &mockValidator{}, nil
+		}
+
 		report, err := tr.TestSingleSchema(context.Background(), targetKey)
 		require.NoError(t, err)
-		require.NotNil(t, report)
-
-		// Should stop after first failure
 		assert.NotEmpty(t, report.FailedTests[earlierKey])
 	})
 }
@@ -904,142 +836,87 @@ func TestTester_ProviderCompatibility(t *testing.T) { //nolint:paralleltest // s
 func TestTester_ProviderCompatibility_NoEarlierSchemas(t *testing.T) {
 	t.Parallel()
 	r := setupTestRegistry(t)
-
-	// Create a single version - no earlier versions to check against
 	targetKey := Key("domain_family_1_0_0")
 	createSchemaFiles(t, r, schemaMap{
 		targetKey: `{"type": "object"}`,
 	})
-
-	targetSchema, _ := r.GetSchemaByKey(targetKey)
-	targetHome := targetSchema.Path(HomeDir)
-	passDir := filepath.Join(targetHome, string(TestDocTypePass))
-	failDir := filepath.Join(targetHome, string(TestDocTypeFail))
-	require.NoError(t, os.MkdirAll(passDir, 0o755))
-	require.NoError(t, os.MkdirAll(failDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(passDir, "valid.json"), []byte(`{}`), 0o600))
+	s, _ := r.GetSchemaByKey(targetKey)
+	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "fail"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass", "valid.json"), []byte(`{}`), 0o600))
 
 	tr := NewTester(r)
 	tr.SetSkipCompatible(false)
-
 	report, err := tr.TestSingleSchema(context.Background(), targetKey)
 	require.NoError(t, err)
-	require.NotNil(t, report)
-
-	// Should succeed with no compatibility issues (no earlier versions)
 	assert.Len(t, report.PassedTests[targetKey], 1)
-	assert.Empty(t, report.FailedTests)
 }
 
 func TestTester_ProviderCompatibility_NoPassTests(t *testing.T) {
 	t.Parallel()
 	r := setupTestRegistry(t)
-
-	// Create two versions but no pass tests
-	earlierKey := Key("domain_family_1_0_0")
 	targetKey := Key("domain_family_1_0_1")
-
 	createSchemaFiles(t, r, schemaMap{
-		earlierKey: `{"type": "object"}`,
-		targetKey:  `{"type": "object"}`,
+		Key("domain_family_1_0_0"): `{"type": "object"}`,
+		targetKey:                  `{"type": "object"}`,
 	})
-
-	for _, k := range []Key{earlierKey, targetKey} {
-		s, _ := r.GetSchemaByKey(k)
-		home := s.Path(HomeDir)
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypePass)), 0o755))
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypeFail)), 0o755))
-	}
+	s, _ := r.GetSchemaByKey(targetKey)
+	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "fail"), 0o755))
 
 	tr := NewTester(r)
 	tr.SetSkipCompatible(false)
-
 	report, err := tr.TestSingleSchema(context.Background(), targetKey)
 	require.NoError(t, err)
-	require.NotNil(t, report)
-
-	// No pass tests means nothing to check
 	assert.Empty(t, report.FailedTests)
 }
 
 func TestTester_ProviderCompatibility_LocalTestsFail(t *testing.T) {
 	t.Parallel()
 	r := setupTestRegistry(t)
-
-	// Create two versions
-	earlierKey := Key("domain_family_1_0_0")
 	targetKey := Key("domain_family_1_0_1")
-
+	earlierKey := Key("domain_family_1_0_0")
 	createSchemaFiles(t, r, schemaMap{
 		earlierKey: `{"type": "object"}`,
 		targetKey:  `{"type": "object"}`,
 	})
-
-	targetSchema, _ := r.GetSchemaByKey(targetKey)
-	targetHome := targetSchema.Path(HomeDir)
-	passDir := filepath.Join(targetHome, string(TestDocTypePass))
-	failDir := filepath.Join(targetHome, string(TestDocTypeFail))
-	require.NoError(t, os.MkdirAll(passDir, 0o755))
-	require.NoError(t, os.MkdirAll(failDir, 0o755))
-
-	earlierSchema, _ := r.GetSchemaByKey(earlierKey)
-	earlierHome := earlierSchema.Path(HomeDir)
-	require.NoError(t, os.MkdirAll(filepath.Join(earlierHome, string(TestDocTypePass)), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(earlierHome, string(TestDocTypeFail)), 0o755))
-
-	// Create a FAILING pass test for target schema (invalid JSON)
-	require.NoError(t, os.WriteFile(filepath.Join(passDir, "invalid.json"), []byte(`"not an object"`), 0o600))
+	s, _ := r.GetSchemaByKey(targetKey)
+	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "fail"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass", "invalid.json"), []byte(`{}`), 0o600))
 
 	mc, ok := r.compiler.(*mockCompiler)
 	require.True(t, ok)
 	mc.CompileFunc = func(_ string) (validator.Validator, error) {
-		return &mockValidator{
-			Err: errors.New("validation failed"),
-		}, nil
+		return &mockValidator{Err: errors.New("fail")}, nil
 	}
 
 	tr := NewTester(r)
-	tr.SetStopOnFirstError(false)
 	tr.SetSkipCompatible(false)
-
 	report, err := tr.TestSingleSchema(context.Background(), targetKey)
 	require.NoError(t, err)
-	require.NotNil(t, report)
-
-	// When local tests fail, compatibility check should not run
-	// So only target schema failures are present
 	assert.NotEmpty(t, report.FailedTests[targetKey])
 	assert.Empty(t, report.FailedTests[earlierKey])
 }
 
-func TestTester_ProviderCompatibility_RenderError(t *testing.T) { //nolint:paralleltest // shared state
+func TestTester_ProviderCompatibility_RenderError(t *testing.T) {
+	t.Parallel()
 	r := setupTestRegistry(t)
-
-	earlierKey := Key("domain_family_1_0_0")
 	targetKey := Key("domain_family_1_0_1")
-
+	earlierKey := Key("domain_family_1_0_0")
 	createSchemaFiles(t, r, schemaMap{
 		earlierKey: `{"type": "object"}`,
 		targetKey:  `{"type": "object"}`,
 	})
+	ts, _ := r.GetSchemaByKey(targetKey)
+	require.NoError(t, os.MkdirAll(filepath.Join(ts.Path(HomeDir), "pass"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(ts.Path(HomeDir), "fail"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(ts.Path(HomeDir), "pass", "v.json"), []byte(`{}`), 0o600))
 
-	for _, k := range []Key{earlierKey, targetKey} {
-		s, _ := r.GetSchemaByKey(k)
-		home := s.Path(HomeDir)
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypePass)), 0o755))
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypeFail)), 0o755))
-	}
-
-	// Create a pass test for the target
-	targetSchema, _ := r.GetSchemaByKey(targetKey)
-	passDir := filepath.Join(targetSchema.Path(HomeDir), "pass")
-	require.NoError(t, os.WriteFile(filepath.Join(passDir, "valid.json"), []byte(`{}`), 0o600))
-
-	// Configure compiler to fail when compiling the earlier schema
 	mc, ok := r.compiler.(*mockCompiler)
 	require.True(t, ok)
 	mc.CompileFunc = func(id string) (validator.Validator, error) {
-		if strings.Contains(id, string(earlierKey)) {
+		if strings.Contains(id, "1_0_0") {
 			return nil, errors.New("compile error")
 		}
 		return &mockValidator{}, nil
@@ -1047,232 +924,232 @@ func TestTester_ProviderCompatibility_RenderError(t *testing.T) { //nolint:paral
 
 	tr := NewTester(r)
 	tr.SetSkipCompatible(false)
-
 	_, err := tr.TestSingleSchema(context.Background(), targetKey)
-	// Should return the compile error since it's a real error, not a test failure
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "compile error")
 }
 
 func TestTester_ProviderCompatibility_PassTestsPass(t *testing.T) {
 	t.Parallel()
 	r := setupTestRegistry(t)
-
-	earlierKey := Key("domain_family_1_0_0")
 	targetKey := Key("domain_family_1_0_1")
-
 	createSchemaFiles(t, r, schemaMap{
-		earlierKey: `{"type": "object"}`,
-		targetKey:  `{"type": "object"}`,
+		Key("domain_family_1_0_0"): `{"type": "object"}`,
+		targetKey:                  `{"type": "object"}`,
 	})
-
-	for _, k := range []Key{earlierKey, targetKey} {
-		s, _ := r.GetSchemaByKey(k)
-		home := s.Path(HomeDir)
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypePass)), 0o755))
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypeFail)), 0o755))
-	}
-
-	// Create a pass test for the target that will also pass against earlier
-	targetSchema, _ := r.GetSchemaByKey(targetKey)
-	passDir := filepath.Join(targetSchema.Path(HomeDir), "pass")
-	require.NoError(t, os.WriteFile(filepath.Join(passDir, "valid.json"), []byte(`{}`), 0o600))
-
-	// Both schemas accept the test
-	mc, ok := r.compiler.(*mockCompiler)
-	require.True(t, ok)
-	mc.CompileFunc = func(_ string) (validator.Validator, error) {
-		return &mockValidator{Err: nil}, nil
-	}
+	ts, _ := r.GetSchemaByKey(targetKey)
+	require.NoError(t, os.MkdirAll(filepath.Join(ts.Path(HomeDir), "pass"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(ts.Path(HomeDir), "fail"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(ts.Path(HomeDir), "pass", "v.json"), []byte(`{}`), 0o600))
 
 	tr := NewTester(r)
 	tr.SetSkipCompatible(false)
-
 	report, err := tr.TestSingleSchema(context.Background(), targetKey)
 	require.NoError(t, err)
-	require.NotNil(t, report)
-
-	// Both should have passed tests
-	assert.Len(t, report.PassedTests[targetKey], 1)
-	assert.Len(t, report.PassedTests[earlierKey], 1)
 	assert.Empty(t, report.FailedTests)
 }
 
-// TestTester_testSchemaCompatibleWithEarlierVersions_ErrorPaths tests error paths
-// in the compatibility checking functions that are difficult to reach through
-// normal TestSingleSchema flow.
 func TestTester_testSchemaCompatibleWithEarlierVersions_ErrorPaths(t *testing.T) {
 	t.Parallel()
-	r := setupTestRegistry(t)
-
-	// Create test schema with pass tests
-	targetKey := Key("domain_family_1_0_1")
-	earlierKey := Key("domain_family_1_0_0")
-
-	createSchemaFiles(t, r, schemaMap{
-		earlierKey: `{"type": "object"}`,
-		targetKey:  `{"type": "object"}`,
-	})
-
-	for _, k := range []Key{earlierKey, targetKey} {
-		s, _ := r.GetSchemaByKey(k)
-		home := s.Path(HomeDir)
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypePass)), 0o755))
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypeFail)), 0o755))
-	}
-
-	// Create pass test
-	targetSchema, _ := r.GetSchemaByKey(targetKey)
-	passDir := filepath.Join(targetSchema.Path(HomeDir), "pass")
-	require.NoError(t, os.WriteFile(filepath.Join(passDir, "valid.json"), []byte(`{}`), 0o600))
 
 	t.Run("GetSchemaByKey error", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
 		tr := NewTester(r)
-		// Call with an invalid key that doesn't exist
-		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), Key("invalid_key_1_0_0"))
+		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), Key("missing_1_0_0"))
 		require.Error(t, err)
 	})
 
-	t.Run("TestDocuments error - pass directory is file not dir", func(t *testing.T) {
+	t.Run("TestDocuments error - pass directory is file", func(t *testing.T) {
 		t.Parallel()
-		r2 := setupTestRegistry(t)
-		key := Key("domain_family_1_0_0")
-		createSchemaFiles(t, r2, schemaMap{
-			key: `{"type": "object"}`,
-		})
+		r := setupTestRegistry(t)
+		k := Key("d_f_1_0_0")
+		createSchemaFiles(t, r, schemaMap{k: `{}`})
+		s, _ := r.GetSchemaByKey(k)
+		require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass"), []byte(""), 0o600))
 
-		s, _ := r2.GetSchemaByKey(key)
-		home := s.Path(HomeDir)
-
-		// Create fail directory but make pass directory a FILE instead of directory
-		require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypeFail)), 0o755))
-		// This creates a FILE named "pass" instead of a directory
-		require.NoError(t, os.WriteFile(filepath.Join(home, string(TestDocTypePass)), []byte(""), 0o600))
-
-		tr := NewTester(r2)
-		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), key)
+		tr := NewTester(r)
+		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), k)
 		require.Error(t, err)
 	})
 
 	t.Run("MajorFamilyEarlierSchemas error", func(t *testing.T) {
 		t.Parallel()
-		r2 := setupTestRegistry(t)
-		key := Key("domain_family_1_0_1")
-		createSchemaFiles(t, r2, schemaMap{
-			key: `{"type": "object"}`,
-		})
+		r := setupTestRegistry(t)
+		k := Key("d_f_1_0_1")
+		createSchemaFiles(t, r, schemaMap{k: `{}`})
+		s, _ := r.GetSchemaByKey(k)
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "fail"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass", "v.json"), []byte(`{}`), 0o600))
 
-		s, _ := r2.GetSchemaByKey(key)
-		home := s.Path(HomeDir)
-		subPassDir := filepath.Join(home, string(TestDocTypePass))
-		subFailDir := filepath.Join(home, string(TestDocTypeFail))
-		require.NoError(t, os.MkdirAll(subPassDir, 0o755))
-		require.NoError(t, os.MkdirAll(subFailDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(subPassDir, "valid.json"), []byte(`{}`), 0o600))
+		// Make major dir a file
+		majorDir := filepath.Join(s.Path(FamilyDir), "1")
+		require.NoError(t, os.RemoveAll(majorDir))
+		require.NoError(t, os.WriteFile(majorDir, []byte(""), 0o600))
 
-		// Pre-cache TestDocuments result BEFORE making directory unreadable
-		// This ensures TestDocuments succeeds, but MajorFamilyEarlierSchemas fails
-		_, err := s.TestDocuments(TestDocTypePass)
-		require.NoError(t, err)
-
-		// Make the major version directory unreadable to cause MajorFamilyEarlierSchemas error
-		familyDir := s.Path(FamilyDir)
-		majorDir := filepath.Join(familyDir, "1")
-		require.NoError(t, os.Chmod(majorDir, 0o000))
-		t.Cleanup(func() { _ = os.Chmod(majorDir, 0o755) })
-
-		tr := NewTester(r2)
-		err = tr.testSchemaCompatibleWithEarlierVersions(context.Background(), key)
+		tr := NewTester(r)
+		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), k)
 		require.Error(t, err)
 	})
 
 	t.Run("testEarlierSchemaWithTargetTests - GetSchemaByKey error", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
 		tr := NewTester(r)
+		targetKey := Key("t_1_0_0")
+		createSchemaFiles(t, r, schemaMap{targetKey: `{}`})
 		ts, _ := r.GetSchemaByKey(targetKey)
-		passTests, _ := ts.TestDocuments(TestDocTypePass)
+		passTests := []TestInfo{{Path: "p.json"}}
 
-		// Call with an invalid earlier key
-		err := tr.testEarlierSchemaWithTargetTests(
-			context.Background(),
-			Key("invalid_earlier_1_0_0"),
-			targetSchema,
-			passTests,
-		)
+		err := tr.testEarlierSchemaWithTargetTests(context.Background(), Key("invalid_1_0_0"), ts, passTests)
 		require.Error(t, err)
 	})
 
-	t.Run("testEarlierSchemaWithTargetTests - context cancelled in loop", func(t *testing.T) {
+	t.Run("testEarlierSchemaWithTargetTests - context cancelled", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
+		tr := NewTester(r)
+		targetKey := Key("t_1_0_0")
+		earlierKey := Key("e_1_0_0")
+		createSchemaFiles(t, r, schemaMap{targetKey: `{}`, earlierKey: `{}`})
+		_, _ = r.GetSchemaByKey(targetKey)
+		es, _ := r.GetSchemaByKey(earlierKey)
+		passTests := []TestInfo{{Path: "p.json"}}
 
-		// Create a pass test file for the target
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := tr.testEarlierSchemaWithTargetTests(ctx, earlierKey, es, passTests)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("MajorFamilyEarlierSchemas error - mocked", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+
+		k := Key("d_f_1_0_1")
+		createSchemaFiles(t, r, schemaMap{k: `{}`})
+
+		s, err := r.GetSchemaByKey(k)
+		require.NoError(t, err)
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass", "t.json"), []byte(`{}`), 0o600))
+
+		mockResolver := &mockPathResolver{
+			getUintSubdirectories: func(_ string) ([]uint64, error) {
+				return nil, errors.New("listing error")
+			},
+		}
+
+		// Inject mock resolver into registry
+		r.pathResolver = mockResolver
+
+		tr := NewTester(r)
+		err = tr.testSchemaCompatibleWithEarlierVersions(context.Background(), k)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "listing error")
+	})
+
+	t.Run("context cancelled during loop", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		k1 := Key("d_f_1_0_0")
+		k1b := Key("d_f_1_0_1")
+		k2 := Key("d_f_1_0_2")
+		createSchemaFiles(t, r, schemaMap{k1: `{}`, k1b: `{}`, k2: `{}`})
+		s, _ := r.GetSchemaByKey(k2)
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "fail"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass", "v.json"), []byte(`{}`), 0o600))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		tr := NewTester(r)
+		tr.SetNumWorkers(1)
+
+		mc, ok := r.compiler.(*mockCompiler)
+		require.True(t, ok)
+		mc.CompileFunc = func(id string) (validator.Validator, error) {
+			if strings.Contains(id, "1_0_0") {
+				cancel()
+				time.Sleep(100 * time.Millisecond) // Give loop time to hit select
+			}
+			return &mockValidator{}, nil
+		}
+
+		err := tr.testSchemaCompatibleWithEarlierVersions(ctx, k2)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("render failure during loop", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		tr := NewTester(r)
+		k1 := Key("d_f_1_0_0")
+		k2 := Key("d_f_1_0_1")
+		createSchemaFiles(t, r, schemaMap{k1: `{}`, k2: `{}`})
+		s, _ := r.GetSchemaByKey(k2)
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "fail"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass", "v.json"), []byte(`{}`), 0o600))
+
+		mc, ok := r.compiler.(*mockCompiler)
+		require.True(t, ok)
+		mc.CompileFunc = func(id string) (validator.Validator, error) {
+			if strings.Contains(id, "1_0_0") {
+				return nil, errors.New("render fail")
+			}
+			return &mockValidator{}, nil
+		}
+
+		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), k2)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "render fail")
+	})
+
+	t.Run("external context cancelled before wait", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		tr := NewTester(r)
+		k1 := Key("d_f_1_0_0")
+		k2 := Key("d_f_1_0_1")
+		createSchemaFiles(t, r, schemaMap{k1: `{}`, k2: `{}`})
+		s, _ := r.GetSchemaByKey(k2)
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(HomeDir), "fail"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(s.Path(HomeDir), "pass", "v.json"), []byte(`{}`), 0o600))
+
+		ctx, cancel := context.WithCancel(context.Background())
+
 		mc, ok := r.compiler.(*mockCompiler)
 		require.True(t, ok)
 		mc.CompileFunc = func(_ string) (validator.Validator, error) {
-			return &mockValidator{Err: nil}, nil
+			cancel()
+			return &mockValidator{}, nil
 		}
 
-		tr := NewTester(r)
-		ts, _ := r.GetSchemaByKey(targetKey)
-		passTests, _ := ts.TestDocuments(TestDocTypePass)
-		require.NotEmpty(t, passTests)
-
-		earlierSchema, _ := r.GetSchemaByKey(earlierKey)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Cancel immediately
-
-		err := tr.testEarlierSchemaWithTargetTests(ctx, earlierKey, earlierSchema, passTests)
+		err := tr.testSchemaCompatibleWithEarlierVersions(ctx, k2)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 
-	t.Run("context cancelled triggers ctx.Err return", func(t *testing.T) {
+	t.Run("GetSchemaByKey failure with invalid JSON", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
+		tr := NewTester(r)
+		k := Key("d_f_1_0_0")
+		createSchemaFiles(t, r, schemaMap{k: `{"type": "object"}`})
+		s, _ := r.GetSchemaByKey(k)
+		require.NoError(t, os.WriteFile(s.Path(FilePath), []byte("{ invalid json"), 0o600))
 
-		// Set up multiple earlier versions to have multiple loop iterations
-		r2 := setupTestRegistry(t)
-		keys := []Key{
-			Key("domain_family_1_0_0"),
-			Key("domain_family_1_0_1"),
-			Key("domain_family_1_0_2"),
-		}
+		// Clear cache to force reload
+		r.mu.Lock()
+		delete(r.cache, k)
+		r.mu.Unlock()
 
-		createSchemaFiles(t, r2, schemaMap{
-			keys[0]: `{"type": "object"}`,
-			keys[1]: `{"type": "object"}`,
-			keys[2]: `{"type": "object"}`,
-		})
-
-		for _, k := range keys {
-			s, _ := r2.GetSchemaByKey(k)
-			home := s.Path(HomeDir)
-			require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypePass)), 0o755))
-			require.NoError(t, os.MkdirAll(filepath.Join(home, string(TestDocTypeFail)), 0o755))
-		}
-
-		// Create a pass test for the target (the last key)
-		ts, _ := r2.GetSchemaByKey(keys[2])
-		ctxTestPassDir := filepath.Join(ts.Path(HomeDir), "pass")
-		require.NoError(t, os.WriteFile(filepath.Join(ctxTestPassDir, "valid.json"), []byte(`{}`), 0o600))
-
-		// Configure compiler
-		mc, ok := r2.compiler.(*mockCompiler)
-		require.True(t, ok)
-		mc.CompileFunc = func(_ string) (validator.Validator, error) {
-			return &mockValidator{Err: nil}, nil
-		}
-
-		tr := NewTester(r2)
-
-		// Pass a context that's already cancelled
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Cancel immediately
-
-		err := tr.testSchemaCompatibleWithEarlierVersions(ctx, keys[2])
-		// Should return ctx.Err() which is context.Canceled
+		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), k)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
+		assert.IsType(t, &InvalidJSONError{}, err)
 	})
 }

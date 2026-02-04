@@ -9,12 +9,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
-var absFunc = filepath.Abs
-
-func NewCreateRegistryCmd() *cobra.Command {
+func NewCreateRegistryCmd(pathResolver fs.PathResolver) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   CreateRegistryCmdName + " [dirpath]",
 		Short: "Create a new JSON schema registry",
@@ -44,7 +43,7 @@ jsm create-registry ./my-registry
 			}
 
 			fmt.Printf("Successfully created new registry at: %s\n", dirpath)
-			fmt.Printf("%s", addEnvironmentVariableInstructions(dirpath))
+			fmt.Printf("%s", addEnvironmentVariableInstructions(pathResolver, dirpath))
 			fmt.Println("\nTo create your first schema, use: the create-schema command. For details:")
 			fmt.Printf("  jsm create-schema -h\n")
 
@@ -55,12 +54,12 @@ jsm create-registry ./my-registry
 	return cmd
 }
 
-func addEnvironmentVariableInstructions(dirpath string) string {
-	return addEnvironmentVariableInstructionsForOS(dirpath, runtime.GOOS)
+func addEnvironmentVariableInstructions(pathResolver fs.PathResolver, dirpath string) string {
+	return addEnvironmentVariableInstructionsForOS(pathResolver, dirpath, runtime.GOOS)
 }
 
-func addEnvironmentVariableInstructionsForOS(dirpath, goos string) string {
-	abs, err := absFunc(dirpath)
+func addEnvironmentVariableInstructionsForOS(pathResolver fs.PathResolver, dirpath, goos string) string {
+	abs, err := pathResolver.Abs(dirpath)
 	if err != nil {
 		abs = dirpath
 	}

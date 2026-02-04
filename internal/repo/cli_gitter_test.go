@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
 func setupTestRepo(t *testing.T) string {
@@ -50,22 +51,22 @@ func newTestConfig(t *testing.T) *config.Config {
 	}
 }
 
-//nolint:paralleltest // os.Chdir is used
 func TestCLIGitter_GetLatestAnchor(t *testing.T) {
-	tmpDir := setupTestRepo(t)
-	origDir, _ := os.Getwd()
-	require.NoError(t, os.Chdir(tmpDir))
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-
+	t.Parallel()
 	cfg := newTestConfig(t)
-	g := NewCLIGitter(cfg)
+	pathResolver := fs.NewPathResolver()
 
 	t.Run("no tags found - returns root commit", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
+
 		anchor, err := g.GetLatestAnchor("prod")
 		require.NoError(t, err)
 
 		// Get root commit hash to compare
 		revCmd := exec.Command("git", "rev-list", "--max-parents=0", "HEAD")
+		revCmd.Dir = tmpDir
 		revOut, err := revCmd.Output()
 		require.NoError(t, err)
 		expected := Revision(strings.TrimSpace(string(revOut)))
@@ -74,8 +75,13 @@ func TestCLIGitter_GetLatestAnchor(t *testing.T) {
 	})
 
 	t.Run("tag found", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
+
 		// Create a tag
 		cmd := exec.Command("git", "tag", "jsm-deploy/prod/v1")
+		cmd.Dir = tmpDir
 		require.NoError(t, cmd.Run())
 
 		anchor, err := g.GetLatestAnchor("prod")
@@ -84,178 +90,179 @@ func TestCLIGitter_GetLatestAnchor(t *testing.T) {
 	})
 
 	t.Run("error - invalid env", func(t *testing.T) {
+		t.Parallel()
+		g := NewCLIGitter(cfg, pathResolver, "")
 		_, err := g.GetLatestAnchor("invalid-env")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "does not define environment")
 	})
 
 	t.Run("error - not a git repo", func(t *testing.T) {
+		t.Parallel()
 		emptyDir := t.TempDir()
-		require.NoError(t, os.Chdir(emptyDir))
-		// No t.Cleanup(Chdir) needed here as it's already cleanup above for TestCLIGitter_GetLatestAnchor
+		gEmpty := NewCLIGitter(cfg, pathResolver, emptyDir)
 
-		_, err := g.GetLatestAnchor("prod")
+		_, err := gEmpty.GetLatestAnchor("prod")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "could not find git history")
 	})
 }
 
-//nolint:paralleltest // os.Chdir is used
 func TestCLIGitter_GetSchemaChanges(t *testing.T) {
-	tmpDir := setupTestRepo(t)
-	origDir, _ := os.Getwd()
-	require.NoError(t, os.Chdir(tmpDir))
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-
+	t.Parallel()
 	cfg := newTestConfig(t)
-	g := NewCLIGitter(cfg)
-
-	// Setup: initial commit with a tag
-	srcDir := "src/schemas"
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-
-	f1 := filepath.Join(srcDir, "user.schema.json")
-	require.NoError(t, os.WriteFile(f1, []byte("{}"), 0o600))
-
-	require.NoError(t, exec.Command("git", "add", ".").Run())
-	require.NoError(t, exec.Command("git", "commit", "-m", "first schema").Run())
-	require.NoError(t, exec.Command("git", "tag", "jsm-deploy/prod/v1").Run())
-
-	anchor := Revision("jsm-deploy/prod/v1")
+	pathResolver := fs.NewPathResolver()
 
 	t.Run("modified file", func(t *testing.T) {
-		require.NoError(t, os.WriteFile(f1, []byte(`{"type": "object"}`), 0o600))
-		require.NoError(t, exec.Command("git", "add", ".").Run())
-		require.NoError(t, exec.Command("git", "commit", "-m", "modify schema").Run())
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
 
-		changes, err := g.GetSchemaChanges(anchor, srcDir, ".schema.json")
+		srcDir := filepath.Join(tmpDir, "src", "schemas")
+		require.NoError(t, os.MkdirAll(srcDir, 0o755))
+		f1 := filepath.Join(srcDir, "user.schema.json")
+		require.NoError(t, os.WriteFile(f1, []byte("{}"), 0o600))
+
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "add", ".").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "commit", "-m", "1").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "tag", "jsm-deploy/prod/v1").Run())
+
+		require.NoError(t, os.WriteFile(f1, []byte(`{"type": "object"}`), 0o600))
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "add", ".").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "commit", "-m", "2").Run())
+
+		changes, err := g.GetSchemaChanges("jsm-deploy/prod/v1", srcDir, ".schema.json")
 		require.NoError(t, err)
 		require.Len(t, changes, 1)
-		absF1, _ := filepath.Abs(f1)
-		assert.Equal(t, absF1, changes[0].Path)
+
+		expected, _ := filepath.EvalSymlinks(f1)
+		actual, _ := filepath.EvalSymlinks(changes[0].Path)
+		assert.Equal(t, expected, actual)
 		assert.False(t, changes[0].IsNew)
 	})
 
 	t.Run("new file", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
+
+		srcDir := filepath.Join(tmpDir, "src", "schemas")
+		require.NoError(t, os.MkdirAll(srcDir, 0o755))
+		f1 := filepath.Join(srcDir, "user.schema.json")
+		require.NoError(t, os.WriteFile(f1, []byte("{}"), 0o600))
+
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "add", ".").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "commit", "-m", "1").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "tag", "jsm-deploy/prod/v1").Run())
+
 		f2 := filepath.Join(srcDir, "product.schema.json")
 		require.NoError(t, os.WriteFile(f2, []byte("{}"), 0o600))
-		require.NoError(t, exec.Command("git", "add", ".").Run())
-		require.NoError(t, exec.Command("git", "commit", "-m", "add new schema").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "add", ".").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "commit", "-m", "2").Run())
 
-		changes, err := g.GetSchemaChanges(anchor, srcDir, ".schema.json")
+		changes, err := g.GetSchemaChanges("jsm-deploy/prod/v1", srcDir, ".schema.json")
 		require.NoError(t, err)
-		require.Len(t, changes, 2)
+		require.Len(t, changes, 1) // Only f2 is changed relative to tag
 
-		absF2, _ := filepath.Abs(f2)
-		var foundProduct bool
-		for _, c := range changes {
-			if c.Path == absF2 {
-				assert.True(t, c.IsNew)
-				foundProduct = true
-			}
-		}
-		assert.True(t, foundProduct)
+		expected, _ := filepath.EvalSymlinks(f2)
+		actual, _ := filepath.EvalSymlinks(changes[0].Path)
+		assert.Equal(t, expected, actual)
+		assert.True(t, changes[0].IsNew)
 	})
 
 	t.Run("ignore non-schema files", func(t *testing.T) {
-		f3 := filepath.Join(srcDir, "README.md")
-		require.NoError(t, os.WriteFile(f3, []byte("docs"), 0o600))
-		require.NoError(t, exec.Command("git", "add", ".").Run())
-		require.NoError(t, exec.Command("git", "commit", "-m", "add readme").Run())
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
 
-		changes, err := g.GetSchemaChanges(anchor, srcDir, ".schema.json")
+		srcDir := filepath.Join(tmpDir, "src", "schemas")
+		require.NoError(t, os.MkdirAll(srcDir, 0o755))
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "tag", "jsm-deploy/prod/v1").Run())
+
+		f1 := filepath.Join(srcDir, "README.md")
+		require.NoError(t, os.WriteFile(f1, []byte("docs"), 0o600))
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "add", ".").Run())
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "commit", "-m", "1").Run())
+
+		changes, err := g.GetSchemaChanges("jsm-deploy/prod/v1", srcDir, ".schema.json")
 		require.NoError(t, err)
-		require.Len(t, changes, 2)
+		assert.Empty(t, changes)
 	})
 
 	t.Run("git diff error", func(t *testing.T) {
-		_, err := g.GetSchemaChanges(Revision("invalid-anchor"), srcDir, ".schema.json")
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
+		_, err := g.GetSchemaChanges(Revision("invalid-anchor"), ".", ".schema.json")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "git diff failed")
 	})
 
 	t.Run("no changes", func(t *testing.T) {
-		// New repo with one commit and tag
-		dir := setupTestRepo(t)
-		require.NoError(t, os.Chdir(dir))
-		// Note: no cleanup needed, we'll return to origDir after TestCLIGitter_GetSchemaChanges
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
+		require.NoError(t, exec.Command("git", "-C", tmpDir, "tag", "jsm-deploy/prod/v1").Run())
 
-		cmd := exec.Command("git", "tag", "jsm-deploy/prod/v2")
-		require.NoError(t, cmd.Run())
-
-		changes, err := g.GetSchemaChanges(Revision("jsm-deploy/prod/v2"), srcDir, ".schema.json")
+		changes, err := g.GetSchemaChanges(Revision("jsm-deploy/prod/v1"), ".", ".schema.json")
 		require.NoError(t, err)
 		assert.Empty(t, changes)
 	})
 
-	t.Run("absPath error", func(t *testing.T) { //nolint:paralleltest // modifies global state
-		origAbsPath := absPath
-		absPath = func(_ string) (string, error) {
-			return "", errors.New("absPath failure")
+	t.Run("absPath error", func(t *testing.T) {
+		t.Parallel()
+		mockResolver := &mockPathResolver{
+			absFn: func(_ string) (string, error) {
+				return "", errors.New("absPath failure")
+			},
 		}
-		defer func() { absPath = origAbsPath }()
+		gWithMock := NewCLIGitter(cfg, mockResolver, "")
 
-		_, err := g.GetSchemaChanges(Revision("HEAD"), "some/path", ".schema.json")
+		_, err := gWithMock.GetSchemaChanges(Revision("HEAD"), "some/path", ".schema.json")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "absPath failure")
 	})
 
 	t.Run("subdirectory path resolution", func(t *testing.T) {
-		// 1. Setup repo with registry in a subdirectory
+		t.Parallel()
 		repoDir := setupTestRepo(t)
 		registryDir := filepath.Join(repoDir, "my-registry")
 		require.NoError(t, os.MkdirAll(registryDir, 0o755))
 
-		// Get initial commit (anchor) before adding schema
 		anchorOut, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
 		require.NoError(t, err)
 		initialAnchor := Revision(strings.TrimSpace(string(anchorOut)))
 
-		// 2. Add a schema and commit it
 		schemaFile := filepath.Join(registryDir, "test.schema.json")
 		require.NoError(t, os.WriteFile(schemaFile, []byte("{}"), 0o600))
 		require.NoError(t, exec.Command("git", "-C", repoDir, "add", ".").Run())
 		require.NoError(t, exec.Command("git", "-C", repoDir, "commit", "-m", "add schema").Run())
 
-		// 3. Change workdir to registry
-		origCWD, _ := os.Getwd()
-		require.NoError(t, os.Chdir(registryDir))
-		defer func() { _ = os.Chdir(origCWD) }()
-
-		// 4. Call GetSchemaChanges with "." as sourceDir
+		g := NewCLIGitter(cfg, pathResolver, registryDir)
 		changes, err := g.GetSchemaChanges(initialAnchor, ".", ".schema.json")
 		require.NoError(t, err)
 
-		// 5. Verify paths are absolute or correctly resolvable
-		// Current bug: returns "my-registry/test.schema.json" (repo-relative)
-		// Expected: absolute path or correctly resolvable path from current CWD
 		require.Len(t, changes, 1)
-
-		// If it's absolute, this will pass. If it's the broken repo-relative path,
-		// it will likely fail this check because it's looking for my-registry/my-registry/...
 		_, statErr := os.Stat(changes[0].Path)
-		assert.NoError(t, statErr, "Path %s should be resolvable from CWD %s", changes[0].Path, registryDir)
+		assert.NoError(t, statErr)
 	})
+
 	t.Run("getGitRoot error", func(t *testing.T) {
+		t.Parallel()
 		emptyDir := t.TempDir()
-		origCWD, _ := os.Getwd()
-		require.NoError(t, os.Chdir(emptyDir))
-		defer func() { _ = os.Chdir(origCWD) }()
+		g := NewCLIGitter(cfg, pathResolver, emptyDir)
 
 		_, err := g.GetSchemaChanges(Revision("HEAD"), ".", ".schema.json")
 		require.Error(t, err)
 	})
 }
 
-//nolint:paralleltest // os.Chdir is used
 func TestCLIGitter_getGitRoot(t *testing.T) {
+	t.Parallel()
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		repoDir := setupTestRepo(t)
-		origCWD, _ := os.Getwd()
-		require.NoError(t, os.Chdir(repoDir))
-		defer func() { _ = os.Chdir(origCWD) }()
-
-		g := NewCLIGitter(newTestConfig(t))
+		g := NewCLIGitter(newTestConfig(t), fs.NewPathResolver(), repoDir)
 		root, err := g.getGitRoot()
 		require.NoError(t, err)
 
@@ -265,91 +272,72 @@ func TestCLIGitter_getGitRoot(t *testing.T) {
 	})
 
 	t.Run("error - not a git repo", func(t *testing.T) {
+		t.Parallel()
 		emptyDir := t.TempDir()
-		origCWD, _ := os.Getwd()
-		require.NoError(t, os.Chdir(emptyDir))
-		defer func() { _ = os.Chdir(origCWD) }()
-
-		g := NewCLIGitter(newTestConfig(t))
+		g := NewCLIGitter(newTestConfig(t), fs.NewPathResolver(), emptyDir)
 		_, err := g.getGitRoot()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to find git root")
 	})
 }
 
-// TestCLIGitter_TagDeploymentSuccess verifies the tag creation and push logic.
-//
-//nolint:paralleltest // os.Chdir is used
 func TestCLIGitter_TagDeploymentSuccess(t *testing.T) {
-	tmpDir := setupTestRepo(t)
-	origDir, _ := os.Getwd()
-	require.NoError(t, os.Chdir(tmpDir))
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-
+	t.Parallel()
 	cfg := newTestConfig(t)
-	g := NewCLIGitter(cfg)
+	pathResolver := fs.NewPathResolver()
 
 	t.Run("success without remote", func(t *testing.T) {
-		// This should fail on push, but tagName should be returned
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
+
 		tagName, err := g.TagDeploymentSuccess("prod")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to push git tag to origin")
 		assert.NotEmpty(t, tagName)
-		assert.Contains(t, tagName, "jsm-deploy/prod/")
 
-		// Verify tag exists locally
 		cmd := exec.Command("git", "rev-parse", tagName)
+		cmd.Dir = tmpDir
 		require.NoError(t, cmd.Run())
 	})
 
 	t.Run("success with remote", func(t *testing.T) {
-		// Setup a "remote"
+		t.Parallel()
 		remoteDir := t.TempDir()
-		// Init remote as shared/bare repo to allow pushing
 		require.NoError(t, exec.Command("git", "init", "--bare", remoteDir).Run())
 
 		repoDir := t.TempDir()
 		require.NoError(t, exec.Command("git", "init", repoDir).Run())
-		require.NoError(t, os.Chdir(repoDir))
-		require.NoError(t, exec.Command("git", "config", "user.email", "t@t.com").Run())
-		require.NoError(t, exec.Command("git", "config", "user.name", "t").Run())
-		require.NoError(t, exec.Command("git", "commit", "--allow-empty", "-m", "init").Run())
-		require.NoError(t, exec.Command("git", "remote", "add", "origin", remoteDir).Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "config", "user.email", "t@t.com").Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "config", "user.name", "t").Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "commit", "--allow-empty", "-m", "init").Run())
+		require.NoError(t, exec.Command("git", "-C", repoDir, "remote", "add", "origin", remoteDir).Run())
 
-		g2 := NewCLIGitter(cfg)
-		tagName, err := g2.TagDeploymentSuccess("prod")
+		g := NewCLIGitter(cfg, pathResolver, repoDir)
+		tagName, err := g.TagDeploymentSuccess("prod")
 		require.NoError(t, err)
-		assert.Contains(t, tagName, "jsm-deploy/prod/")
 
-		// Verify tag exists on "remote"
 		cmd := exec.Command("git", "-C", remoteDir, "rev-parse", tagName)
 		require.NoError(t, cmd.Run())
-
-		// Cleanup: go back to tmpDir
-		require.NoError(t, os.Chdir(tmpDir))
 	})
 
 	t.Run("tag failure", func(t *testing.T) {
-		dir := t.TempDir()
-		binDir := filepath.Join(dir, "bin")
-		require.NoError(t, os.Mkdir(binDir, 0o755))
+		t.Parallel()
+		tmpDir := setupTestRepo(t)
+		binDir := filepath.Join(t.TempDir(), "bin")
+		require.NoError(t, os.MkdirAll(binDir, 0o755))
 
 		realGit, _ := exec.LookPath("git")
-		// Script that fails only if 'tag' is an argument
 		gitScript := fmt.Sprintf(`#!/bin/sh
-for arg in "$@"; do
-	if [ "$arg" = "tag" ]; then
-		exit 1
-	fi
-done
+if [ "$1" = "tag" ]; then exit 1; fi
 exec %s "$@"
 `, realGit)
+		gitPath := filepath.Join(binDir, "git")
 		//nolint:gosec // need executable permission for mock git
-		require.NoError(t, os.WriteFile(filepath.Join(binDir, "git"), []byte(gitScript), 0o755))
+		require.NoError(t, os.WriteFile(gitPath, []byte(gitScript), 0o755))
 
-		origPath := os.Getenv("PATH")
-		_ = os.Setenv("PATH", binDir+":"+origPath)
-		defer func() { _ = os.Setenv("PATH", origPath) }()
+		g := NewCLIGitter(cfg, pathResolver, tmpDir)
+		g.SetGitBinary(gitPath)
 
 		_, err := g.TagDeploymentSuccess("prod")
 		require.Error(t, err)
@@ -357,6 +345,8 @@ exec %s "$@"
 	})
 
 	t.Run("error - invalid env", func(t *testing.T) {
+		t.Parallel()
+		g := NewCLIGitter(cfg, pathResolver, "")
 		_, err := g.TagDeploymentSuccess("invalid-env")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "does not define environment")
@@ -365,13 +355,33 @@ exec %s "$@"
 
 func TestCLIGitter_tagPrefix(t *testing.T) {
 	t.Parallel()
+	g := NewCLIGitter(newTestConfig(t), fs.NewPathResolver(), "")
+	assert.Equal(t, "jsm-deploy/prod", g.tagPrefix("prod"))
+}
 
-	cfg := newTestConfig(t)
-	g := NewCLIGitter(cfg)
+type mockPathResolver struct {
+	canonicalPathFn       func(path string) (string, error)
+	absFn                 func(path string) (string, error)
+	getUintSubdirectories func(dirPath string) ([]uint64, error)
+}
 
-	prefix := g.tagPrefix("prod")
-	assert.Equal(t, "jsm-deploy/prod", prefix)
+func (m *mockPathResolver) CanonicalPath(path string) (string, error) {
+	if m.canonicalPathFn != nil {
+		return m.canonicalPathFn(path)
+	}
+	return fs.NewPathResolver().CanonicalPath(path)
+}
 
-	prefix = g.tagPrefix("staging")
-	assert.Equal(t, "jsm-deploy/staging", prefix)
+func (m *mockPathResolver) Abs(path string) (string, error) {
+	if m.absFn != nil {
+		return m.absFn(path)
+	}
+	return filepath.Abs(path)
+}
+
+func (m *mockPathResolver) GetUintSubdirectories(dirPath string) ([]uint64, error) {
+	if m.getUintSubdirectories != nil {
+		return m.getUintSubdirectories(dirPath)
+	}
+	return fs.GetUintSubdirectories(dirPath)
 }

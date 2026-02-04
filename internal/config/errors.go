@@ -12,11 +12,11 @@ func (e *MustHaveExactlyOneProductionEnvironmentError) Error() string {
 	return "json-schema-manager-config.yml must have exactly one environment marked with isProduction: true"
 }
 
-type MissingError struct {
+type MissingConfigError struct {
 	Path string
 }
 
-func (e *MissingError) Error() string {
+func (e *MissingConfigError) Error() string {
 	return fmt.Sprintf("json-schema-manager-config.yml missing in: %s", e.Path)
 }
 

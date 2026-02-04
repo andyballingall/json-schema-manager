@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
@@ -20,7 +21,7 @@ func TestRootCmd(t *testing.T) {
 		lazy := &LazyManager{inner: mgr}
 		logLevel := &slog.LevelVar{}
 		var stderr bytes.Buffer
-		rootCmd := NewRootCmd(lazy, logLevel, &stderr)
+		rootCmd := NewRootCmd(lazy, logLevel, &stderr, fs.NewEnvProvider())
 		return logLevel, rootCmd
 	}
 
@@ -72,7 +73,7 @@ func TestRootCmd(t *testing.T) {
 		lazy := &LazyManager{} // Empty lazy manager, no inner manager
 		logLevel := &slog.LevelVar{}
 		var stderr bytes.Buffer
-		rootCmd := NewRootCmd(lazy, logLevel, &stderr)
+		rootCmd := NewRootCmd(lazy, logLevel, &stderr, fs.NewEnvProvider())
 
 		rootCmd.SetArgs([]string{"completion", "zsh"})
 		// This should not fail even though registryPath is empty and lazy has no inner,

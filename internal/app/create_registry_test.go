@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
 func TestNewCreateRegistryCmd(t *testing.T) {
@@ -21,7 +23,8 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 		tmpDir := t.TempDir()
 		registryDir := filepath.Join(tmpDir, "my-registry")
 
-		cmd := NewCreateRegistryCmd()
+		pathResolver := fs.NewPathResolver()
+		cmd := NewCreateRegistryCmd(pathResolver)
 		cmd.SetArgs([]string{registryDir})
 
 		err := cmd.Execute()
@@ -46,7 +49,8 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 		err := os.WriteFile(configPath, []byte("existing"), 0o600)
 		require.NoError(t, err)
 
-		cmd := NewCreateRegistryCmd()
+		pathResolver := fs.NewPathResolver()
+		cmd := NewCreateRegistryCmd(pathResolver)
 		cmd.SetArgs([]string{tmpDir})
 
 		err = cmd.Execute()
@@ -66,7 +70,8 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 
 		badDir := filepath.Join(filePath, "nested")
 
-		cmd := NewCreateRegistryCmd()
+		pathResolver := fs.NewPathResolver()
+		cmd := NewCreateRegistryCmd(pathResolver)
 		cmd.SetArgs([]string{badDir})
 
 		err = cmd.Execute()
@@ -76,7 +81,8 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 
 	t.Run("error - missing argument", func(t *testing.T) {
 		t.Parallel()
-		cmd := NewCreateRegistryCmd()
+		pathResolver := fs.NewPathResolver()
+		cmd := NewCreateRegistryCmd(pathResolver)
 		cmd.SetArgs([]string{})
 
 		// Cobra will handle this and return an error before RunE
@@ -96,7 +102,8 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 			_ = os.Chmod(registryDir, 0o755)
 		}()
 
-		cmd := NewCreateRegistryCmd()
+		pathResolver := fs.NewPathResolver()
+		cmd := NewCreateRegistryCmd(pathResolver)
 		cmd.SetArgs([]string{registryDir})
 
 		err = cmd.Execute()
@@ -109,7 +116,8 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 func TestRootCmd_CreateRegistryRegistration(t *testing.T) {
 	t.Parallel()
 	lazy := &LazyManager{}
-	rootCmd := NewRootCmd(lazy, nil, os.Stderr)
+	ll := &slog.LevelVar{}
+	rootCmd := NewRootCmd(lazy, ll, os.Stderr, fs.NewEnvProvider())
 
 	found := false
 	for _, cmd := range rootCmd.Commands() {
@@ -125,7 +133,8 @@ func TestRootCmd_CreateRegistryRegistration(t *testing.T) {
 func TestPersistentPreRunE_CreateRegistry_SkipsInitialisation(t *testing.T) {
 	t.Parallel()
 	lazy := &LazyManager{}
-	rootCmd := NewRootCmd(lazy, nil, os.Stderr)
+	ll := &slog.LevelVar{}
+	rootCmd := NewRootCmd(lazy, ll, os.Stderr, fs.NewEnvProvider())
 
 	// Find the create-registry command
 	var createRegistryCmd *cobra.Command
@@ -147,41 +156,74 @@ func TestPersistentPreRunE_CreateRegistry_SkipsInitialisation(t *testing.T) {
 	assert.False(t, lazy.HasInner())
 }
 
-//nolint:paralleltest // This test modifies a global variable
 func TestAddEnvironmentVariableInstructionsForOS(t *testing.T) {
+	t.Parallel()
 	dir := "/tmp/bg-registry"
+	pathResolver := fs.NewPathResolver()
 
-	t.Run("windows", func(t *testing.T) { //nolint:paralleltest // shared global state
-		got := addEnvironmentVariableInstructionsForOS(dir, "windows")
+	t.Run("windows", func(t *testing.T) {
+		t.Parallel()
+		got := addEnvironmentVariableInstructionsForOS(pathResolver, dir, "windows")
 		assert.Contains(t, got, "setx")
-		assert.Contains(t, got, "JSM_ROOT_DIRECTORY")
+		assert.Contains(t, got, "JSM_REGISTRY_ROOT_DIR")
 	})
 
-	t.Run("darwin", func(t *testing.T) { //nolint:paralleltest // shared global state
-		got := addEnvironmentVariableInstructionsForOS(dir, "darwin")
+	t.Run("darwin", func(t *testing.T) {
+		t.Parallel()
+		got := addEnvironmentVariableInstructionsForOS(pathResolver, dir, "darwin")
 		assert.Contains(t, got, "echo")
 		assert.Contains(t, got, "&& source")
 		assert.Contains(t, got, ".zshrc")
-		assert.Contains(t, got, "JSM_ROOT_DIRECTORY")
+		assert.Contains(t, got, "JSM_REGISTRY_ROOT_DIR")
 	})
 
-	t.Run("linux", func(t *testing.T) { //nolint:paralleltest // shared global state
-		got := addEnvironmentVariableInstructionsForOS(dir, "linux")
+	t.Run("linux", func(t *testing.T) {
+		t.Parallel()
+		got := addEnvironmentVariableInstructionsForOS(pathResolver, dir, "linux")
 		assert.Contains(t, got, "echo")
 		assert.Contains(t, got, "&& source")
 		assert.Contains(t, got, ".bashrc")
-		assert.Contains(t, got, "JSM_ROOT_DIRECTORY")
+		assert.Contains(t, got, "JSM_REGISTRY_ROOT_DIR")
 	})
 
-	t.Run("abs-error", func(t *testing.T) { //nolint:paralleltest // shared global state
-		oldAbs := absFunc
-		defer func() { absFunc = oldAbs }()
+	t.Run("abs-error", func(t *testing.T) {
+		t.Parallel()
 
-		absFunc = func(_ string) (string, error) {
-			return "", errors.New("mock-error")
+		mockResolver := &mockPathResolver{
+			absFn: func(_ string) (string, error) {
+				return "", errors.New("mock-error")
+			},
 		}
 
-		got := addEnvironmentVariableInstructionsForOS(dir, "linux")
+		got := addEnvironmentVariableInstructionsForOS(mockResolver, dir, "linux")
 		assert.Contains(t, got, dir)
 	})
+}
+
+// mockPathResolver is a test implementation of fs.PathResolver.
+type mockPathResolver struct {
+	canonicalPathFn       func(path string) (string, error)
+	absFn                 func(path string) (string, error)
+	getUintSubdirectories func(dirPath string) ([]uint64, error)
+}
+
+func (m *mockPathResolver) CanonicalPath(path string) (string, error) {
+	if m.canonicalPathFn != nil {
+		return m.canonicalPathFn(path)
+	}
+	return fs.NewPathResolver().CanonicalPath(path)
+}
+
+func (m *mockPathResolver) Abs(path string) (string, error) {
+	if m.absFn != nil {
+		return m.absFn(path)
+	}
+	return filepath.Abs(path)
+}
+
+func (m *mockPathResolver) GetUintSubdirectories(dirPath string) ([]uint64, error) {
+	if m.getUintSubdirectories != nil {
+		return m.getUintSubdirectories(dirPath)
+	}
+	return fs.GetUintSubdirectories(dirPath)
 }

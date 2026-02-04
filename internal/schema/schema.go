@@ -12,7 +12,6 @@ import (
 	"text/template"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
@@ -356,7 +355,7 @@ func (s *Schema) BumpVersion(rt ReleaseType) {
 
 // FindNextVersion looks for the next version component.
 func (s *Schema) nextVersion(parentDir string) uint64 {
-	versions, err := fs.GetUintSubdirectories(parentDir)
+	versions, err := s.registry.pathResolver.GetUintSubdirectories(parentDir)
 	if err != nil || len(versions) == 0 {
 		return 0
 	}
@@ -391,7 +390,7 @@ func (s *Schema) TestDocuments(tt TestDocType) ([]TestInfo, error) {
 	entries, err := os.ReadDir(docDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, &TestDirMissingError{Path: docDir, Type: tt}
+			return nil, &TestDirMissingConfigError{Path: docDir, Type: tt}
 		}
 		return nil, err
 	}
@@ -442,7 +441,7 @@ func (s *Schema) MajorFamilyFutureSchemas() ([]Key, error) {
 	fd := s.Path(FamilyDir)
 	majorDir := filepath.Join(fd, strconv.FormatUint(s.core.version.Major(), 10))
 
-	minorVers, err := fs.GetUintSubdirectories((majorDir))
+	minorVers, err := s.registry.pathResolver.GetUintSubdirectories(majorDir)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +462,7 @@ func (s *Schema) MajorFamilyFutureSchemas() ([]Key, error) {
 // addMinorFamilyFutureSchemas finds schemas which share the same major version as this schema
 // and represent a future version.
 func (s *Schema) addMinorFamilyFutureSchemas(minorVersion uint64, minorDir string, keys []Key) ([]Key, error) {
-	patchDirs, err := fs.GetUintSubdirectories(minorDir)
+	patchDirs, err := s.registry.pathResolver.GetUintSubdirectories(minorDir)
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +503,7 @@ func (s *Schema) MajorFamilyEarlierSchemas() ([]Key, error) {
 	fd := s.Path(FamilyDir)
 	majorDir := filepath.Join(fd, strconv.FormatUint(s.core.version.Major(), 10))
 
-	minorVers, err := fs.GetUintSubdirectories((majorDir))
+	minorVers, err := s.registry.pathResolver.GetUintSubdirectories(majorDir)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +524,7 @@ func (s *Schema) MajorFamilyEarlierSchemas() ([]Key, error) {
 // addMinorFamilyEarlierSchemas finds schemas which share the same major version as this schema
 // and represent an earlier version.
 func (s *Schema) addMinorFamilyEarlierSchemas(minorVersion uint64, minorDir string, keys []Key) ([]Key, error) {
-	patchDirs, err := fs.GetUintSubdirectories(minorDir)
+	patchDirs, err := s.registry.pathResolver.GetUintSubdirectories(minorDir)
 	if err != nil {
 		return nil, err
 	}

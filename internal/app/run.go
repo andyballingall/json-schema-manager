@@ -5,16 +5,22 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+
+	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
-func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func Run(ctx context.Context, args []string, stdout, stderr io.Writer, envProvider fs.EnvProvider) error {
 	logLevel := &slog.LevelVar{}
 	logLevel.Set(slog.LevelInfo)
 
 	// Local lazy instance ensures t.Parallel() safety
 	lazy := &LazyManager{}
 
-	rootCmd := NewRootCmd(lazy, logLevel, stderr)
+	if envProvider == nil {
+		envProvider = fs.NewEnvProvider()
+	}
+
+	rootCmd := NewRootCmd(lazy, logLevel, stderr, envProvider)
 	rootCmd.SetArgs(args[1:]) // Skip the program name
 	rootCmd.SetOut(stdout)
 	rootCmd.SetErr(stderr)

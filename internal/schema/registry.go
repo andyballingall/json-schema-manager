@@ -14,10 +14,7 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
-const RootDirEnvVar = "JSM_ROOT_DIRECTORY"
-
-// getwd is a variable corresponding to os.Getwd, so we can mock it in tests.
-var getwd = os.Getwd
+const RootDirEnvVar = "JSM_REGISTRY_ROOT_DIR"
 
 // Registry is the object which represents a JSM Registry, and also stores the schemas in memory.
 type Registry struct {
@@ -25,61 +22,64 @@ type Registry struct {
 	config        *config.Config
 	cache         Cache
 	compiler      validator.Compiler
+	pathResolver  fs.PathResolver
+	envProvider   fs.EnvProvider
 	mu            sync.RWMutex       // Protects cache
 	loadGroup     singleflight.Group // Prevents duplicate loads
 	renderGroup   singleflight.Group // Prevents duplicate renders/compilations
 }
 
-// CreateNewRegistry creates a new JSM registry.
-func NewRegistry(rootDirectory string, compiler validator.Compiler) (*Registry, error) {
-	r := &Registry{
-		cache:         make(Cache),
-		compiler:      compiler,
-		rootDirectory: rootDirectory,
-	}
-
-	if err := r.Initialise(rootDirectory); err != nil {
+// NewRegistry creates a new JSM registry.
+// If rootDirectory is empty, it will use the environment variable JSM_REGISTRY_ROOT_DIR.
+func NewRegistry(
+	rootDirectory string,
+	compiler validator.Compiler,
+	pathResolver fs.PathResolver,
+	envProvider fs.EnvProvider,
+) (*Registry, error) {
+	rd, err := initRootDirectory(rootDirectory, pathResolver, envProvider)
+	if err != nil {
 		return nil, err
 	}
-	return r, nil
+
+	config, err := config.New(rd, compiler)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Registry{
+		cache:         make(Cache),
+		compiler:      compiler,
+		rootDirectory: rd,
+		config:        config,
+		pathResolver:  pathResolver,
+		envProvider:   envProvider,
+	}, nil
 }
 
-// Initialise attempts to initialise the registry, either from an explicit root directory,
-// or from the environment variable JSM_ROOT_DIRECTORY.
-// If found, then an attempt is made to initialise the configuration.
-// If successful, the registry is ready to be used.
-func (r *Registry) Initialise(newRootDir string) error {
-	var err error
-	if newRootDir != "" {
-		r.rootDirectory = newRootDir
+// initRootDirectory attempts to initialise the registry root directory.
+// If rootDirectory is empty, it will attempt to find the root directory from
+// the environment variable JSM_REGISTRY_ROOT_DIR.
+func initRootDirectory(rd string, pathResolver fs.PathResolver, envProvider fs.EnvProvider) (string, error) {
+	if rd == "" {
+		rd = envProvider.Get(RootDirEnvVar)
 	}
 
-	if r.rootDirectory == "" {
-		r.rootDirectory, err = discoverRootDirectory()
-		if err != nil {
-			return err
-		}
-	}
-
-	r.rootDirectory, err = canonicalPath(r.rootDirectory)
+	// If we get here, we have at least a string which *may* be a candidate.
+	rdc, err := pathResolver.CanonicalPath(rd)
 	if err != nil {
-		return &RegistryRootNotFoundError{Path: r.rootDirectory}
+		return "", &RegistryInitError{Path: rd, Err: err}
 	}
+	rd = rdc
 
-	info, err := os.Stat(r.rootDirectory)
+	info, err := os.Stat(rd)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !info.IsDir() {
-		return &RegistryRootNotFolderError{Path: r.rootDirectory}
+		return "", &RegistryRootNotFolderError{Path: rd}
 	}
-
-	r.config, err = config.New(r.rootDirectory, r.compiler)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return rd, nil
 }
 
 // RootDirectory returns the root directory of the registry.
@@ -101,7 +101,7 @@ func (r *Registry) Config() (*config.Config, error) {
 func (r *Registry) KeyFromSchemaPath(path string) (Key, error) {
 	var err error
 
-	path, err = canonicalPath(path)
+	path, err = r.pathResolver.CanonicalPath(path)
 	if err != nil {
 		return "", &NotFoundError{Path: path}
 	}
@@ -344,41 +344,3 @@ func (r *Registry) CreateNewSchemaVersion(path string, rt ReleaseType) (*Schema,
 
 	return ns, nil
 }
-
-// discoverRootDirectory returns the root directory of the JSM registry.
-// It first checks the environment variable JSM_ROOT_DIRECTORY, and if not set,
-// it uses the current working directory and searches up for the config file
-// (json-schema-manager-config.yml) to identify the root directory.
-func discoverRootDirectory() (string, error) {
-	rd := os.Getenv(RootDirEnvVar)
-	if rd != "" {
-		return rd, nil
-	}
-
-	curr, err := getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Walk up searching for the config file
-	for {
-		configPath := filepath.Join(curr, config.JsmRegistryConfigFile)
-		if _, statErr := os.Stat(configPath); statErr == nil {
-			return curr, nil
-		}
-
-		parent := filepath.Dir(curr)
-		if parent == curr {
-			// Reached root without finding config
-			break
-		}
-		curr = parent
-	}
-
-	// Fallback to CWD if no config found (allows starting from scratch or using flags)
-	return getwd()
-}
-
-// canonicalPath returns the canonical, absolute path by resolving symlinks.
-// We define it as a variable so we can mock it for testing.
-var canonicalPath = fs.CanonicalPath
