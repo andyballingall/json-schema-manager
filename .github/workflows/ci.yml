@@ -28,3 +28,6 @@ jobs:
 
             - name: Run Tests
               run: make test-race
+
+            - name: Run Tests
+              run: make check-coverage
