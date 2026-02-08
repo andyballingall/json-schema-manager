@@ -40,24 +40,13 @@ switch ($Target) {
         Invoke-GoTest
     }
     "test-cover" {
-        $coverArgs = @("-count=1", "-coverpkg=./internal/...", "-coverprofile=coverage.out")
-        Invoke-GoTest $coverArgs
-        if ($LASTEXITCODE -eq 0) {
-            go tool cover -func coverage.out
-        }
+        Invoke-GoTest @("--summary", "-count=1")
     }
     "check-coverage" {
-        & "$PSCommandPath" test-cover
-        if ($LASTEXITCODE -eq 0) {
-            go run scripts/check_coverage/main.go coverage.out
-        }
+        Invoke-GoTest @("--check-coverage", "-count=1")
     }
     "cover-html" {
-        $htmlArgs = @("-count=1", "-coverpkg=./internal/...", "-coverprofile=coverage.out")
-        Invoke-GoTest $htmlArgs
-        if ($LASTEXITCODE -eq 0) {
-            go tool cover -html coverage.out
-        }
+        Invoke-GoTest @("--browser", "-count=1")
     }
     "lint" {
         go run scripts/lint/main.go

@@ -774,7 +774,7 @@ func TestGetSchemaByKey_DoubleCheck_Deterministic(t *testing.T) {
 	assert.Same(t, s, s2)
 
 	// For the singleflight double-check path, we rely on concurrent test execution
-	// to occasionally hit it. The 90% threshold in check_coverage handles this.
+	// to occasionally hit it. The 90% threshold in the tester script handles this.
 }
 
 func TestRegistryDiscovery(t *testing.T) {
