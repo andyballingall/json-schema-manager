@@ -204,6 +204,16 @@ func TestErrors(t *testing.T) {
 			err:      &ChangedDeployedSchemasError{Paths: []string{"f1.json"}},
 			contains: []string{"cannot modify deployed schemas", "f1.json"},
 		},
+		{
+			name:     "NoSchemaTargetsError",
+			err:      &NoSchemaTargetsError{},
+			contains: []string{"must specify a schema to validate"},
+		},
+		{
+			name:     "InvalidTestDocumentDirectoryError",
+			err:      &InvalidTestDocumentDirectoryError{Path: "/invalid/test.json"},
+			contains: []string{"test document must be in a 'pass' or 'fail' directory"},
+		},
 	}
 
 	for _, tt := range tests {

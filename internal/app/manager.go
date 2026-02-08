@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"slices"
@@ -18,6 +19,9 @@ import (
 type Manager interface {
 	ValidateSchema(ctx context.Context, target schema.ResolvedTarget, verbose bool, format string,
 		useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool) error
+	WatchValidation(ctx context.Context, target schema.ResolvedTarget, verbose bool, format string,
+		useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool,
+		readyChan chan<- struct{}) error
 	Registry() *schema.Registry
 	CreateSchema(domainAndFamilyName string) (schema.Key, error)
 	CreateSchemaVersion(k schema.Key, rt schema.ReleaseType) (schema.Key, error)
@@ -59,6 +63,14 @@ func (l *LazyManager) ValidateSchema(ctx context.Context, target schema.Resolved
 	return l.check().ValidateSchema(ctx, target, verbose, format, useColour, continueOnError, testScope, skipCompatible)
 }
 
+func (l *LazyManager) WatchValidation(ctx context.Context, target schema.ResolvedTarget, verbose bool,
+	format string, useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool,
+	readyChan chan<- struct{},
+) error {
+	return l.check().WatchValidation(ctx, target, verbose, format, useColour, continueOnError,
+		testScope, skipCompatible, readyChan)
+}
+
 func (l *LazyManager) Registry() *schema.Registry {
 	return l.check().Registry()
 }
@@ -92,11 +104,12 @@ var _ Manager = (*CLIManager)(nil)
 
 // CLIManager is the concrete implementation of the Manager interface.
 type CLIManager struct {
-	logger      *slog.Logger
-	registry    *schema.Registry
-	tester      *schema.Tester
-	gitter      repo.Gitter
-	distBuilder schema.DistBuilder
+	logger         *slog.Logger
+	registry       *schema.Registry
+	tester         *schema.Tester
+	gitter         repo.Gitter
+	distBuilder    schema.DistBuilder
+	reporterWriter io.Writer
 }
 
 func NewCLIManager(
@@ -107,11 +120,12 @@ func NewCLIManager(
 	db schema.DistBuilder,
 ) *CLIManager {
 	return &CLIManager{
-		logger:      l,
-		registry:    r,
-		tester:      t,
-		gitter:      g,
-		distBuilder: db,
+		logger:         l,
+		registry:       r,
+		tester:         t,
+		gitter:         g,
+		distBuilder:    db,
+		reporterWriter: os.Stdout,
 	}
 }
 
@@ -170,7 +184,79 @@ func (m *CLIManager) ValidateSchema(ctx context.Context, target schema.ResolvedT
 		reporter = &report.TextReporter{Verbose: verbose, UseColour: useColour}
 	}
 
-	return reporter.Write(os.Stdout, tr)
+	return reporter.Write(m.reporterWriter, tr)
+}
+
+// WatchValidation watches for changes in the registry and triggers validation.
+// If you want to know when the watcher is ready to start listening to changes,
+// pass a non-nil readyChan to be notified.
+func (m *CLIManager) WatchValidation(ctx context.Context, target schema.ResolvedTarget, verbose bool,
+	format string, useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool,
+	readyChan chan<- struct{},
+) error {
+	m.logger.Debug("watching validation", "target", target, "verbose", verbose, "format", format,
+		"useColour", useColour, "continueOnError", continueOnError, "skipCompatible", skipCompatible)
+
+	if target.Key == nil && target.Scope == nil {
+		return &schema.NoSchemaTargetsError{}
+	}
+
+	watcher := schema.NewWatcher(m.registry, m.logger)
+
+	callback := func(event schema.WatchEvent) {
+		// Filter events based on target
+		if target.Key != nil && event.Key != *target.Key {
+			return
+		}
+		if target.Scope != nil && !event.Key.InScope(*target.Scope) {
+			return
+		}
+
+		// Create a new tester for each event to ensure fresh reporting
+		tester := schema.NewTester(m.registry)
+		tester.SetStopOnFirstError(!continueOnError)
+		tester.SetScope(testScope)
+		tester.SetSkipCompatible(skipCompatible)
+
+		var tr *schema.TestReport
+		var err error
+
+		if event.TestPath != "" {
+			m.logger.Info("Test changed:", "schema", event.Key, "test", event.TestPath)
+			tr, err = tester.TestSpecificDocument(ctx, event.Key, event.TestPath)
+		} else {
+			m.logger.Info("Schema changed:", "schema", event.Key)
+			m.registry.Reset()
+			tr, err = tester.TestSingleSchema(ctx, event.Key)
+		}
+
+		if err != nil {
+			m.logger.Error("Validation failed", "error", err)
+			return
+		}
+
+		var reporter schema.Reporter
+		switch format {
+		case "json":
+			reporter = &report.JSONReporter{}
+		default:
+			reporter = &report.TextReporter{Verbose: verbose, UseColour: useColour}
+		}
+
+		if rErr := reporter.Write(m.reporterWriter, tr); rErr != nil {
+			m.logger.Error("Failed to write report", "error", rErr)
+		}
+	}
+
+	// Forward watcher Ready signal if caller wants notification
+	if readyChan != nil {
+		go func() {
+			<-watcher.Ready
+			readyChan <- struct{}{}
+		}()
+	}
+
+	return watcher.Watch(ctx, callback)
 }
 
 func (m *CLIManager) RenderSchema(_ context.Context, target schema.ResolvedTarget, env config.Env) ([]byte, error) {

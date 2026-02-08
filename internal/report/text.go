@@ -120,8 +120,10 @@ func (tr *TextReporter) Write(w io.Writer, r *schema.TestReport) error {
 	if totalFailed > 0 {
 		statsColor = colBoldRed
 	}
-	fmt.Fprintf(w, "%s%s\n", summaryLabel, tr.cs(statsColor, summaryStats))
-	fmt.Fprintf(w, "%s\n", divider)
-
-	return nil
+	_, err := fmt.Fprintf(w, "%s%s\n", summaryLabel, tr.cs(statsColor, summaryStats))
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%s\n", divider)
+	return err
 }

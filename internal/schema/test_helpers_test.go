@@ -48,6 +48,8 @@ func (m *mockCompiler) SupportedSchemaVersions() []validator.Draft {
 	return []validator.Draft{validator.Draft7}
 }
 
+func (m *mockCompiler) Clear() {}
+
 const testConfigData = `
 environments:
   prod:

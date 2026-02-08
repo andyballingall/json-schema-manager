@@ -1,12 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -131,5 +133,47 @@ environments:
 		err := Run(context.Background(), []string{"jsm", "validate", "some_schema_1_0_0"}, io.Discard, io.Discard, env)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "registry root cannot be the same as the git root")
+	})
+
+	t.Run("run with nil env", func(t *testing.T) {
+		t.Parallel()
+		// If we pass nil, Run should create its own EnvProvider.
+		// However, it will then try to discover the registry in the current CWD.
+		// We'll just check that it doesn't panic and returns some error (since CWD likely isn't a registry root).
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"jsm", "--help"}, &stdout, &stderr, nil)
+		require.NoError(t, err)
+		assert.Contains(t, stdout.String(), "jsm is a CLI tool")
+	})
+
+	t.Run("run interrupted by user", func(t *testing.T) {
+		t.Parallel()
+		regDir := t.TempDir()
+		cfgData := `environments: {prod: {publicUrlRoot: 'https://p', privateUrlRoot: 'https://pr', isProduction: true}}`
+		require.NoError(t, os.WriteFile(filepath.Join(regDir, config.JsmRegistryConfigFile), []byte(cfgData), 0o600))
+		env := &mockEnvProvider{values: map[string]string{
+			"JSM_REGISTRY_ROOT_DIR": regDir,
+		}}
+
+		// Create a dummy schema so validate --watch doesn't fail immediately
+		require.NoError(t, os.MkdirAll(filepath.Join(regDir, "domain", "family", "1", "0", "0"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(regDir, "domain", "family", "1", "0", "0",
+			"domain_family_1_0_0.schema.json"), []byte(`{"type":"object"}`), 0o600))
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		var stderr bytes.Buffer
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, []string{"jsm", "validate", "domain_family_1_0_0", "--watch"}, io.Discard, &stderr, env)
+		}()
+
+		// Wait a bit for it to start watching
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		err := <-done
+
+		require.NoError(t, err)
+		assert.Contains(t, stderr.String(), "Interrupted by user", "Stderr was: %q, Err was: %v", stderr.String(), err)
 	})
 }

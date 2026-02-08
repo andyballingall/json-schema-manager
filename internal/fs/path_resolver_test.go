@@ -157,4 +157,12 @@ func TestMockPathResolver(t *testing.T) {
 		_, err := mock.CanonicalPath("some/path")
 		assert.ErrorIs(t, err, os.ErrPermission)
 	})
+
+	t.Run("CanonicalPath fails with null byte in relative path", func(t *testing.T) {
+		t.Parallel()
+		resolver := NewPathResolver()
+		// On many systems, Abs(".") works but Abs("...\x00") might fail
+		_, err := resolver.CanonicalPath("relative\x00path")
+		assert.Error(t, err)
+	})
 }

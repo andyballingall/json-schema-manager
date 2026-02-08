@@ -95,6 +95,18 @@ func (r *Registry) Config() (*config.Config, error) {
 	return r.config, nil
 }
 
+// Reset clears all registered schemas from the compiler and invalidates
+// the schema cache. This forces all schemas to be re-loaded from disk and
+// re-registered with the compiler on next access.
+func (r *Registry) Reset() {
+	r.compiler.Clear()
+
+	// Clear the entire schema cache so schemas are re-loaded from disk
+	r.mu.Lock()
+	r.cache = make(Cache)
+	r.mu.Unlock()
+}
+
 // KeyFromSchemaPath converts a file path to a Key.
 // It handles both absolute and relative paths, validates the file ends with SchemaSuffix,
 // ensures it's a file (not a directory), and extracts the Key from the filename.

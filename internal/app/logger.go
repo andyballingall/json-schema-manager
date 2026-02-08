@@ -150,7 +150,7 @@ func (c *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 func (c *consoleHandler) formatAttr(a slog.Attr) {
 	if a.Key == "error" || a.Key == "err" {
 		fmt.Fprintf(c.w, ": %v", a.Value)
-	} else if c.level.Level() <= slog.LevelDebug {
+	} else {
 		fmt.Fprintf(c.w, " %s=%v", a.Key, a.Value)
 	}
 }

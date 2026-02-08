@@ -37,6 +37,14 @@ func (m *MockManager) ValidateSchema(ctx context.Context, target schema.Resolved
 	return args.Error(0)
 }
 
+func (m *MockManager) WatchValidation(ctx context.Context, target schema.ResolvedTarget, verbose bool,
+	format string, useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool,
+	readyChan chan<- struct{},
+) error {
+	args := m.Called(ctx, target, verbose, format, useColour, continueOnError, testScope, skipCompatible, readyChan)
+	return args.Error(0)
+}
+
 func (m *MockManager) CreateSchema(domainAndFamilyName string) (schema.Key, error) {
 	args := m.Called(domainAndFamilyName)
 	k, _ := args.Get(0).(schema.Key)

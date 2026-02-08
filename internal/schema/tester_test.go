@@ -91,6 +91,161 @@ func TestTester_TestSingleSchema(t *testing.T) {
 		assert.Len(t, report.PassedTests[k], 1)
 		assert.Len(t, report.FailedTests[k], 1)
 	})
+
+	t.Run("TestSpecificDocument - success", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+
+		s, _ := r.GetSchemaByKey(k)
+		passDir := filepath.Join(s.Path(HomeDir), string(TestDocTypePass))
+		require.NoError(t, os.MkdirAll(passDir, 0o755))
+		testPath := filepath.Join(passDir, "valid.json")
+		require.NoError(t, os.WriteFile(testPath, []byte("{}"), 0o600))
+
+		tr := NewTester(r)
+		mc, ok := r.compiler.(*mockCompiler)
+		require.True(t, ok)
+		mc.CompileFunc = func(_ string) (validator.Validator, error) {
+			return &mockValidator{}, nil
+		}
+
+		report, err := tr.TestSpecificDocument(context.Background(), k, testPath)
+		require.NoError(t, err)
+		assert.Len(t, report.PassedTests[k], 1)
+	})
+
+	t.Run("TestSpecificDocument - invalid directory", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+
+		s, _ := r.GetSchemaByKey(k)
+		invalidDir := filepath.Join(s.Path(HomeDir), "invalid-dir")
+		require.NoError(t, os.MkdirAll(invalidDir, 0o755))
+		testPath := filepath.Join(invalidDir, "test.json")
+		require.NoError(t, os.WriteFile(testPath, []byte("{}"), 0o600))
+
+		tr := NewTester(r)
+		_, err := tr.TestSpecificDocument(context.Background(), k, testPath)
+		require.Error(t, err)
+		assert.IsType(t, &InvalidTestDocumentDirectoryError{}, err)
+	})
+
+	t.Run("TestSpecificDocument - schema not found", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		tr := NewTester(r)
+		_, err := tr.TestSpecificDocument(context.Background(), Key("missing_family_1_0_0"), "any.json")
+		require.Error(t, err)
+	})
+
+	t.Run("TestSpecificDocument - render error", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+
+		tr := NewTester(r)
+		mc, ok := r.compiler.(*mockCompiler)
+		require.True(t, ok)
+		mc.CompileFunc = func(_ string) (validator.Validator, error) {
+			return nil, errors.New("render failure")
+		}
+
+		_, err := tr.TestSpecificDocument(context.Background(), k, "any.json")
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "render failure")
+	})
+
+	t.Run("TestSpecificDocument - cancelled context", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		tr := NewTester(r)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := tr.TestSpecificDocument(ctx, Key("any_1_0_0"), "any.json")
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	testCases := []struct {
+		name       string
+		docType    string
+		errorMsg   string
+		checkField string
+	}{
+		{"validation failure", "pass", "validation failed", "FailedTests"},
+		{"fail doc success", "fail", "expected fail", "PassedTests"},
+	}
+
+	for _, tc := range testCases {
+		t.Run("TestSpecificDocument - "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := setupTestRegistry(t)
+			k := Key("domain_family_1_0_0")
+			createSchemaFiles(t, r, schemaMap{
+				k: `{"type": "object"}`,
+			})
+			docDir := filepath.Join(r.RootDirectory(), "domain", "family", "1", "0", "0", tc.docType)
+			require.NoError(t, os.MkdirAll(docDir, 0o755))
+			testPath := filepath.Join(docDir, "test.json")
+			require.NoError(t, os.WriteFile(testPath, []byte(`[]`), 0o600))
+
+			tr := NewTester(r)
+			mc, ok := r.compiler.(*mockCompiler)
+			require.True(t, ok)
+			mc.CompileFunc = func(_ string) (validator.Validator, error) {
+				return &mockValidator{Err: errors.New(tc.errorMsg)}, nil
+			}
+
+			report, err := tr.TestSpecificDocument(context.Background(), k, testPath)
+			require.NoError(t, err)
+			if tc.checkField == "FailedTests" {
+				assert.Len(t, report.FailedTests, 1)
+			} else {
+				assert.Len(t, report.PassedTests, 1)
+			}
+		})
+	}
+
+	t.Run("TestSpecificDocument - NewTestInfo error", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		tr := NewTester(r)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{k: `{}`})
+
+		// This will fail because the file doesn't exist
+		_, err := tr.TestSpecificDocument(context.Background(), k, "non-existent.json")
+		assert.Error(t, err)
+	})
+
+	t.Run("TestSpecificDocument - Invalid directory", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		k := Key("domain_family_1_0_0")
+		createSchemaFiles(t, r, schemaMap{k: `{}`})
+
+		// Create a file in a directory that is NOT pass or fail
+		s, _ := r.GetSchemaByKey(k)
+		otherDir := filepath.Join(s.Path(HomeDir), "other")
+		require.NoError(t, os.MkdirAll(otherDir, 0o755))
+		testPath := filepath.Join(otherDir, "test.json")
+		require.NoError(t, os.WriteFile(testPath, []byte("{}"), 0o600))
+
+		tr := NewTester(r)
+		_, err := tr.TestSpecificDocument(context.Background(), k, testPath)
+		require.Error(t, err)
+		assert.IsType(t, &InvalidTestDocumentDirectoryError{}, err)
+	})
 }
 
 func TestTester_TestFoundSchemas(t *testing.T) {

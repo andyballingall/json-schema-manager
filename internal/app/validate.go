@@ -61,6 +61,8 @@ ALL SCHEMAS
 		))
 	cmd.Flags().BoolVar(&skipCompatible, "skip-compatible", false,
 		"Skip provider compatibility checks against earlier versions")
+	var watch bool
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Watch for changes and rerun tests")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		var arg string
@@ -91,6 +93,11 @@ ALL SCHEMAS
 
 		noColour, _ := cmd.Flags().GetBool("nocolour")
 		useColour := !noColour
+
+		if watch {
+			return mgr.WatchValidation(cmd.Context(), target, verbose, string(outputVal),
+				useColour, continueOnError, testScope, skipCompatible, nil)
+		}
 
 		return mgr.ValidateSchema(cmd.Context(), target, verbose, string(outputVal),
 			useColour, continueOnError, testScope, skipCompatible)

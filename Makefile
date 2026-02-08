@@ -27,19 +27,17 @@ test:
 test-race:
 	@go run scripts/tester/main.go -race ./... -v
 
-# Run tests with coverage
+# Run tests with coverage and show summary
 test-cover:
-	@go run scripts/tester/main.go -count=1 -race -coverpkg=./internal/... ./... -coverprofile=coverage.out
-	@go tool cover -func=coverage.out
+	@go run scripts/tester/main.go --summary -count=1 -race ./...
 
-# Check that all files (except main.go) have 100% coverage
-check-coverage: test-cover
-	@go run scripts/check_coverage/main.go coverage.out
+# Check that all files in internal, except explicit exclusions, have 100% coverage
+check-coverage:
+	@go run scripts/tester/main.go --check-coverage -count=1 -race ./...
 
 # View coverage in browser
 cover-html:
-	@go run scripts/tester/main.go -count=1 -race -coverpkg=./internal/... ./... -coverprofile=coverage.out
-	@go tool cover -html=coverage.out
+	@go run scripts/tester/main.go --browser -count=1 -race ./...
 
 # Run linter
 lint:

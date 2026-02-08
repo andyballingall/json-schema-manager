@@ -182,4 +182,18 @@ func TestValidateCmd(t *testing.T) {
 		require.NoError(t, err)
 		mgr.AssertExpectations(t)
 	})
+
+	t.Run("watch flag", func(t *testing.T) {
+		t.Parallel()
+		mgr, cmd := setup()
+		key := schema.Key("domain_family_1_0_0")
+		target := schema.ResolvedTarget{Key: &key}
+		mgr.On("WatchValidation", mock.Anything, target, false, "text", true, false,
+			schema.TestScopeLocal, false, (chan<- struct{})(nil)).
+			Return(nil).Once()
+		cmd.SetArgs([]string{"domain_family_1_0_0", "--watch"})
+		err := cmd.ExecuteContext(context.Background())
+		require.NoError(t, err)
+		mgr.AssertExpectations(t)
+	})
 }
