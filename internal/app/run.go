@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,10 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, envProvid
 	rootCmd.SetErr(stderr)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(stderr, "Interrupted by user")
+			return nil
+		}
 		// Print error to stderr for script tests and CLI users (SilenceErrors is set)
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return err

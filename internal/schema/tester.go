@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -99,6 +100,54 @@ func (t *Tester) TestSingleSchema(ctx context.Context, k Key) (*TestReport, erro
 		if err := t.testSchemaCompatibleWithEarlierVersions(ctx, k); err != nil && !errors.Is(err, ErrStopTesting) {
 			return nil, err
 		}
+	}
+
+	return t.report, nil
+}
+
+// TestSpecificDocument executes a single test document for a schema.
+func (t *Tester) TestSpecificDocument(ctx context.Context, k Key, testPath string) (*TestReport, error) {
+	t.report.StartTime = time.Now()
+	defer func() { t.report.EndTime = time.Now() }()
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	s, err := t.registry.GetSchemaByKey(k)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ahead of running the tests, ensure the schema is valid by forcing a render.
+	ri, err := s.Render(t.registry.config.ProductionEnvConfig())
+	if err != nil {
+		return nil, err
+	}
+
+	ti, err := NewTestInfo(testPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine test doc type from path
+	dir := filepath.Base(filepath.Dir(testPath))
+	var tt TestDocType
+	switch dir {
+	case string(TestDocTypePass):
+		tt = TestDocTypePass
+	case string(TestDocTypeFail):
+		tt = TestDocTypeFail
+	default:
+		return nil, &InvalidTestDocumentDirectoryError{Path: testPath}
+	}
+
+	spec := NewSpec(s, ti, tt, nil)
+	err = spec.Run(ri.Validator)
+	if err != nil {
+		t.report.AddFailedTest(k, &spec)
+	} else {
+		t.report.AddPassedTest(k, &spec)
 	}
 
 	return t.report, nil

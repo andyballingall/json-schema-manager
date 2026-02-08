@@ -1795,6 +1795,8 @@ func (c *failCompiler) SupportedSchemaVersions() []validator.Draft {
 	return []validator.Draft{validator.Draft7}
 }
 
+func (c *failCompiler) Clear() {}
+
 func TestRender_CompilerErrs(t *testing.T) {
 	t.Parallel()
 

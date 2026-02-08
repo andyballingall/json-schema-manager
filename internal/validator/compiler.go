@@ -39,4 +39,7 @@ type Compiler interface {
 
 	// SupportedSchemaVersions returns a slice of Draft representing the supported schema versions.
 	SupportedSchemaVersions() []Draft
+
+	// Clear resets the compiler state, removing all registered schemas.
+	Clear()
 }

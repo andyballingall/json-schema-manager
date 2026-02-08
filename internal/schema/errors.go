@@ -241,6 +241,14 @@ func (e *TestDirMissingConfigError) Error() string {
 	return fmt.Sprintf("%s directory missing: %s", e.Type, e.Path)
 }
 
+type InvalidTestDocumentDirectoryError struct {
+	Path string
+}
+
+func (e *InvalidTestDocumentDirectoryError) Error() string {
+	return fmt.Sprintf("test document must be in a 'pass' or 'fail' directory: %s", e.Path)
+}
+
 type NoSchemaTargetsError struct{}
 
 func (e *NoSchemaTargetsError) Error() string {

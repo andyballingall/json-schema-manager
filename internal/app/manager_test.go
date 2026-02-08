@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -40,12 +43,45 @@ func (m *mockCompiler) SupportedSchemaVersions() []validator.Draft {
 	return []validator.Draft{validator.Draft7}
 }
 
+func (m *mockCompiler) Clear() {}
+
 type failingCompiler struct {
 	mockCompiler
 }
 
 func (c *failingCompiler) AddSchema(_ string, _ validator.JSONSchema) error {
 	return fmt.Errorf("add schema failed")
+}
+
+// safeBuffer is a thread-safe wrapper around bytes.Buffer for use in concurrent tests.
+type safeBuffer struct {
+	buf bytes.Buffer
+	mu  sync.Mutex
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+// waitForOutput polls the buffer until it contains output or timeout is reached.
+// Returns true if output was found, false if timeout occurred.
+func (s *safeBuffer) waitForOutput(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if s.String() != "" {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
 }
 
 type mockValidator struct{}
@@ -200,6 +236,295 @@ environments:
 			false, "text", false, false, schema.TestScopeLocal, false)
 		require.Error(t, vErr)
 		require.ErrorContains(t, vErr, "pass directory missing")
+	})
+}
+
+func TestCLIManager_WatchValidation(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// Helper to set up a test schema with registry
+	setupWatchTest := func(t *testing.T) (*schema.Registry, schema.Key, *schema.Schema) {
+		t.Helper()
+		registry := setupTestRegistry(t)
+		key := schema.Key("domain_family_1_0_0")
+		s := schema.New(key, registry)
+		require.NoError(t, os.MkdirAll(s.Path(schema.HomeDir), 0o755))
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type": "object"}`), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "fail"), 0o755))
+		return registry, key, s
+	}
+
+	t.Run("successful watch start and stop", func(t *testing.T) {
+		t.Parallel()
+		registry, key, _ := setupWatchTest(t)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		readyChan := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+		cancel()
+
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, context.Canceled)
+		case <-time.After(2 * time.Second):
+			t.Fatal("WatchValidation timed out after cancel")
+		}
+	})
+
+	t.Run("no identification method provided", func(t *testing.T) {
+		t.Parallel()
+		registry := setupTestRegistry(t)
+		mgr := NewCLIManager(logger, registry, nil, nil, nil)
+		err := mgr.WatchValidation(context.Background(), schema.ResolvedTarget{},
+			false, "text", false, false, schema.TestScopeLocal, false, nil)
+		require.Error(t, err)
+		assert.IsType(t, &schema.NoSchemaTargetsError{}, err)
+	})
+
+	t.Run("triggered watch event", func(t *testing.T) {
+		t.Parallel()
+		registry, key, s := setupWatchTest(t)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		readyChan := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath),
+			[]byte(`{"type": "object", "description": "updated"}`), 0o600))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+
+	t.Run("triggered test doc event", func(t *testing.T) {
+		t.Parallel()
+		registry, key, s := setupWatchTest(t)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		readyChan := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+		testFile := filepath.Join(s.Path(schema.HomeDir), "pass", "test.json")
+		require.NoError(t, os.WriteFile(testFile, []byte("{}"), 0o600))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+
+	t.Run("WatchValidation JSON format", func(t *testing.T) {
+		t.Parallel()
+		registry, key, s := setupWatchTest(t)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		// Capture output to verify the JSON reporter is used
+		var buf safeBuffer
+		mgr.reporterWriter = &buf
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan error, 1)
+		readyChan := make(chan struct{}, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "json", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+
+		// Trigger an event to exercise the JSON reporter branch
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath),
+			[]byte(`{"type": "object", "title": "updated"}`), 0o600))
+
+		// Wait for output to be written (more reliable than fixed sleep)
+		require.True(t, buf.waitForOutput(5*time.Second), "expected output to be written")
+
+		cancel()
+		<-done
+
+		// Verify JSON output was written (confirms JSON reporter branch was hit)
+		assert.Contains(t, buf.String(), "{")
+	})
+
+	t.Run("triggered invalid schema change", func(t *testing.T) {
+		t.Parallel()
+		registry, key, s := setupWatchTest(t)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan error, 1)
+		readyChan := make(chan struct{}, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{ invalid }`), 0o600))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+
+	t.Run("WatchValidation - no target", func(t *testing.T) {
+		t.Parallel()
+		registry := setupTestRegistry(t)
+		mgr := NewCLIManager(logger, registry, nil, nil, nil)
+		err := mgr.WatchValidation(context.Background(), schema.ResolvedTarget{},
+			false, "text", false, false, schema.TestScopeLocal, false, nil)
+		require.Error(t, err)
+		assert.IsType(t, &schema.NoSchemaTargetsError{}, err)
+	})
+
+	t.Run("WatchValidation - filtered events", func(t *testing.T) {
+		t.Parallel()
+		registry, key, _ := setupWatchTest(t)
+
+		// Create a DIFFERENT schema BEFORE starting the watcher (so it's watched)
+		k2 := schema.Key("other_domain_otherfamily_1_0_0")
+		s2 := schema.New(k2, registry)
+		require.NoError(t, os.MkdirAll(s2.Path(schema.HomeDir), 0o755))
+		require.NoError(t, os.WriteFile(s2.Path(schema.FilePath), []byte("{}"), 0o600))
+
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan error, 1)
+		readyChan := make(chan struct{}, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+
+		// Modify the OTHER schema file to trigger an event (should be filtered by Key)
+		require.NoError(t, os.WriteFile(s2.Path(schema.FilePath), []byte(`{"type":"object"}`), 0o600))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+
+	t.Run("WatchValidation - scoped filtered events", func(t *testing.T) {
+		t.Parallel()
+		registry, _, _ := setupWatchTest(t)
+
+		// Create a schema in a DIFFERENT scope BEFORE starting the watcher (so it's watched)
+		k3 := schema.Key("other_domain_family_1_0_0")
+		s3 := schema.New(k3, registry)
+		require.NoError(t, os.MkdirAll(s3.Path(schema.HomeDir), 0o755))
+		require.NoError(t, os.WriteFile(s3.Path(schema.FilePath), []byte("{}"), 0o600))
+
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan error, 1)
+		scope := schema.SearchScope("domain/family")
+		readyChan := make(chan struct{}, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Scope: &scope},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+
+		// Modify the OTHER scope schema file to trigger an event (should be filtered by Scope)
+		require.NoError(t, os.WriteFile(s3.Path(schema.FilePath), []byte(`{"type":"object"}`), 0o600))
+
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+		<-done
+	})
+
+	t.Run("WatchValidation - rerun conflict bug", func(t *testing.T) {
+		t.Parallel()
+
+		regDir := t.TempDir()
+		// Use REAL compiler to expose the bug
+		comp := validator.NewSanthoshCompiler()
+		cfg := `environments:
+  prod:
+    publicUrlRoot: 'https://p'
+    privateUrlRoot: 'https://pr'
+    isProduction: true`
+
+		require.NoError(t, os.WriteFile(filepath.Join(regDir, config.JsmRegistryConfigFile), []byte(cfg), 0o600))
+		registry, err := schema.NewRegistry(regDir, comp, fs.NewPathResolver(), fs.NewEnvProvider())
+		require.NoError(t, err)
+
+		key := schema.Key("domain_family_1_0_0")
+		s := schema.New(key, registry)
+		require.NoError(t, os.MkdirAll(s.Path(schema.HomeDir), 0o755))
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type": "object"}`), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "fail"), 0o755))
+
+		// Set up manager with REAL compiler and log capture
+		var logBuf safeBuffer
+		testLogger := slog.New(slog.NewTextHandler(&logBuf, nil))
+		mgr := NewCLIManager(testLogger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan error, 1)
+		readyChan := make(chan struct{}, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+
+		// First update - should pass
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type": "object", "title": "v1"}`), 0o600))
+		time.Sleep(500 * time.Millisecond)
+
+		// Second update - should trigger "already exists" error in current state
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type": "object", "title": "v2"}`), 0o600))
+		// Wait long enough for debounce (100ms) + processing
+		time.Sleep(1 * time.Second)
+
+		cancel()
+		<-done
+
+		// Assert that the bug is NOT present
+		assert.NotContains(t, logBuf.String(), "already exists")
 	})
 }
 
@@ -953,5 +1278,194 @@ func TestLazyManager_Delegation(t *testing.T) {
 	err = lazy.BuildDist(ctx, config.Env("prod"), false)
 	require.NoError(t, err)
 
+	// Test WatchValidation delegation
+	mockMgr.On("WatchValidation", ctx, target, false, "text", false, false,
+		schema.TestScopeLocal, false, (chan<- struct{})(nil)).Return(nil)
+	err = lazy.WatchValidation(ctx, target, false, "text", false, false, schema.TestScopeLocal, false, nil)
+	require.NoError(t, err)
+
 	mockMgr.AssertExpectations(t)
+}
+
+func TestCLIManager_WatchValidation_ReporterError(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := setupTestRegistry(t)
+	key := schema.Key("domain_family_1_0_0")
+	s := schema.New(key, registry)
+	require.NoError(t, os.MkdirAll(s.Path(schema.HomeDir), 0o755))
+	require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte("{}"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "pass"), 0o755))
+
+	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+	mgr.reporterWriter = &failingWriter{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	readyChan := make(chan struct{}, 1)
+	go func() {
+		done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+			false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+	}()
+
+	<-readyChan
+
+	// Trigger an event
+	require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type":"object"}`), 0o600))
+
+	time.Sleep(500 * time.Millisecond) // Wait for debounce and callback
+
+	cancel()
+	<-done
+}
+
+func TestCLIManager_WatchValidation_CallbackErrors(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := setupTestRegistry(t)
+
+	setupSchema := func(name string) (schema.Key, *schema.Schema) {
+		key := schema.Key(name)
+		s := schema.New(key, registry)
+		require.NoError(t, os.MkdirAll(s.Path(schema.HomeDir), 0o755))
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type":"object"}`), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "fail"), 0o755))
+		return key, s
+	}
+
+	key, s := setupSchema("domain_family_1_0_0")
+	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+	t.Run("callback load error handling", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		readyChan := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+
+		// Trigger write then immediately delete to cause load error in callback
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"updated":true}`), 0o600))
+		require.NoError(t, os.Remove(s.Path(schema.FilePath)))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+}
+
+func TestCLIManager_WatchValidation_EdgeCases(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := setupTestRegistry(t)
+
+	setupSchema := func(name string) (schema.Key, *schema.Schema) {
+		key := schema.Key(name)
+		s := schema.New(key, registry)
+		require.NoError(t, os.MkdirAll(s.Path(schema.HomeDir), 0o755))
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type":"object"}`), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "fail"), 0o755))
+		return key, s
+	}
+
+	key, s := setupSchema("domain_family_1_0_0")
+	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+
+	t.Run("callback error handling", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		readyChan := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+
+		// Trigger validation error by making the schema invalid at the JSON level
+		// although WatchValidation treats any error in TestSingleSchema as a return
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{ invalid }`), 0o600))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+
+	t.Run("system error handling", func(t *testing.T) {
+		t.Parallel()
+		// Use a failing compiler to trigger TestSingleSchema error
+		tmpDir := t.TempDir()
+		cfgPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
+		require.NoError(t, os.WriteFile(cfgPath, []byte(testConfigData), 0o600))
+		reg, err := schema.NewRegistry(tmpDir, &failingCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+		require.NoError(t, err)
+
+		k := schema.Key("error_schema_1_0_0")
+		sch := schema.New(k, reg)
+		require.NoError(t, os.MkdirAll(sch.Path(schema.HomeDir), 0o755))
+		require.NoError(t, os.WriteFile(sch.Path(schema.FilePath), []byte(`{"type":"object"}`), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(sch.Path(schema.HomeDir), "pass"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(sch.Path(schema.HomeDir), "fail"), 0o755))
+
+		mgr := NewCLIManager(logger, reg, schema.NewTester(reg), &MockGitter{}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		readyChan := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &k},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+		require.NoError(t, os.WriteFile(sch.Path(schema.FilePath), []byte(`{"updated":true}`), 0o600))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+
+	t.Run("reporter write error branch", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Reuse main registry but use failing writer
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr.reporterWriter = &failingWriter{}
+
+		readyChan := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte(`{"type":"object"}`), 0o600))
+
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+		<-done
+	})
+}
+
+type failingWriter struct{}
+
+func (f *failingWriter) Write(_ []byte) (n int, err error) {
+	return 0, fmt.Errorf("write failed")
 }

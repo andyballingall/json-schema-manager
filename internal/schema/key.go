@@ -60,3 +60,23 @@ func (k Key) Patch() uint64 {
 func (k Key) Version() SemVer {
 	return SemVer{k.Major(), k.Minor(), k.Patch()}
 }
+
+// InScope returns true if the key falls within the given search scope.
+func (k Key) InScope(ss SearchScope) bool {
+	if ss == "" {
+		return true
+	}
+	scopeParts := strings.Split(string(ss), "/")
+	keyParts := strings.Split(string(k), KeySeparatorString)
+
+	if len(scopeParts) > len(keyParts) {
+		return false
+	}
+
+	for i := range scopeParts {
+		if scopeParts[i] != keyParts[i] {
+			return false
+		}
+	}
+	return true
+}

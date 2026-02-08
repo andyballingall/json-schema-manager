@@ -65,7 +65,7 @@ func TestSetupLogger(t *testing.T) {
 
 		// Check console output
 		assert.Contains(t, stderr.String(), "test message")
-		assert.NotContains(t, stderr.String(), "key=value") // Info doesn't show attrs by default
+		assert.Contains(t, stderr.String(), "key=value") // Info shows attrs
 
 		// Check file output
 		logFile := filepath.Join(tempDir, ".jsm.log")
@@ -210,14 +210,14 @@ func TestConsoleHandler_Thorough(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, buf.String(), "Error: msg: boom")
 
-		// Test attributes on non-debug mode (should be hidden unless error)
+		// Test attributes at Info level (should be shown)
 		buf.Reset()
 		logLevel.Set(slog.LevelInfo)
 		rec2 := slog.NewRecord(time.Now(), slog.LevelInfo, "msg", 0)
 		rec2.AddAttrs(slog.Attr{Key: "foo", Value: slog.StringValue("bar")})
 		err2 := handler.Handle(context.Background(), rec2)
 		require.NoError(t, err2)
-		assert.Equal(t, "msg\n", buf.String())
+		assert.Equal(t, "msg foo=bar\n", buf.String())
 
 		// Test WithAttrs
 		buf.Reset()

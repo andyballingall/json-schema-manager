@@ -53,3 +53,9 @@ func (s *santhoshCompiler) SupportedSchemaVersions() []Draft {
 		Draft2020_12,
 	}
 }
+
+func (s *santhoshCompiler) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.c = jsonschema.NewCompiler()
+}

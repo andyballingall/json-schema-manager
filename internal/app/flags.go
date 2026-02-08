@@ -12,9 +12,14 @@ func (f *formatValue) String() string {
 	return string(*f)
 }
 
+const (
+	formatJSON = "json"
+	formatText = "text"
+)
+
 func (f *formatValue) Set(v string) error {
-	if v != "json" && v != "text" {
-		return fmt.Errorf("must be 'text' or 'json'")
+	if v != formatJSON && v != formatText {
+		return fmt.Errorf("must be '%s' or '%s'", formatText, formatJSON)
 	}
 	*f = formatValue(v)
 	return nil

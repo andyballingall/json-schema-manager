@@ -145,3 +145,70 @@ func TestNewKey(t *testing.T) {
 		})
 	}
 }
+
+func TestKey_InScope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		key   Key
+		scope SearchScope
+		want  bool
+	}{
+		{
+			name:  "match full key",
+			key:   Key("domain_family_1_0_0"),
+			scope: SearchScope("domain/family/1/0/0"),
+			want:  true,
+		},
+		{
+			name:  "match domain",
+			key:   Key("domain_family_1_0_0"),
+			scope: SearchScope("domain"),
+			want:  true,
+		},
+		{
+			name:  "match domain and family",
+			key:   Key("domain_family_1_0_0"),
+			scope: SearchScope("domain/family"),
+			want:  true,
+		},
+		{
+			name:  "empty scope matches all",
+			key:   Key("domain_family_1_0_0"),
+			scope: SearchScope(""),
+			want:  true,
+		},
+		{
+			name:  "mismatch domain",
+			key:   Key("domain_family_1_0_0"),
+			scope: SearchScope("other"),
+			want:  false,
+		},
+		{
+			name:  "mismatch family",
+			key:   Key("domain_family_1_0_0"),
+			scope: SearchScope("domain/other"),
+			want:  false,
+		},
+		{
+			name:  "scope longer than key",
+			key:   Key("domain_family_1_0_0"),
+			scope: SearchScope("domain/family/1/0/0/extra"),
+			want:  false,
+		},
+		{
+			name:  "partial name match is false",
+			key:   Key("domain-other_family_1_0_0"),
+			scope: SearchScope("domain"),
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.key.InScope(tt.scope))
+		})
+	}
+}
