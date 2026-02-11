@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -101,7 +102,7 @@ func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer, envProvi
 			}
 
 			// 3. Hydrate the Lazy Wrapper
-			realMgr := NewCLIManager(logger, registry, tester, gitter, distBuilder)
+			realMgr := NewCLIManager(logger, registry, tester, gitter, distBuilder, os.Stdout)
 			lazy.SetInner(realMgr)
 
 			return nil

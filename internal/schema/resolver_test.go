@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,16 +12,13 @@ import (
 
 func TestTargetResolver(t *testing.T) {
 	t.Parallel()
-	r := setupTestRegistry(t)
 
-	// Create a dummy schema file for path resolution tests
+	// common tests that use a shared registry (but don't mutate it)
+	r := setupTestRegistry(t)
 	k := Key("domain_family_1_0_0")
 	createSchemaFiles(t, r, schemaMap{
 		k: `{"type": "object"}`,
 	})
-	s, _ := r.GetSchemaByKey(k)
-	schemaPath := s.Path(FilePath)
-	schemaDir := s.Path(HomeDir)
 
 	// Additional files for error cases
 	badFile := filepath.Join(r.rootDirectory, "bad.txt")
@@ -81,17 +79,17 @@ func TestTargetResolver(t *testing.T) {
 		},
 		{
 			name:    "resolve file path",
-			arg:     schemaPath,
+			arg:     "SCHEMA_PATH",
 			wantKey: k,
 		},
 		{
 			name:      "resolve directory path",
-			arg:       schemaDir,
+			arg:       "SCHEMA_DIR",
 			wantScope: "domain/family/1/0/0",
 		},
 		{
 			name:      "resolve registry root directory path",
-			arg:       r.rootDirectory,
+			arg:       "REGISTRY_ROOT",
 			wantScope: "",
 		},
 		{
@@ -205,7 +203,24 @@ func TestTargetResolver(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ar := NewTargetResolver(r, tt.arg)
+			subR := setupTestRegistry(t)
+			createSchemaFiles(t, subR, schemaMap{
+				k: `{"type": "object"}`,
+			})
+
+			arg := tt.arg
+			switch arg {
+			case "SCHEMA_PATH":
+				s, _ := subR.GetSchemaByKey(k)
+				arg = s.Path(FilePath)
+			case "SCHEMA_DIR":
+				s, _ := subR.GetSchemaByKey(k)
+				arg = s.Path(HomeDir)
+			case "REGISTRY_ROOT":
+				arg = subR.rootDirectory
+			}
+
+			ar := NewTargetResolver(subR, arg)
 			if tt.setup != nil {
 				tt.setup(ar)
 			}
@@ -239,6 +254,7 @@ func TestTargetResolver(t *testing.T) {
 
 	t.Run("resolvePathToScope canonicalPath error", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
 		ar := NewTargetResolver(r, "")
 		_, err := ar.resolvePathToScope("/non/existent/path")
 		require.Error(t, err)
@@ -246,10 +262,77 @@ func TestTargetResolver(t *testing.T) {
 
 	t.Run("resolvePathToScope out of bounds", func(t *testing.T) {
 		t.Parallel()
+		r := setupTestRegistry(t)
 		ar := NewTargetResolver(r, "")
 		parentDir := filepath.Dir(r.rootDirectory)
 		_, err := ar.resolvePathToScope(parentDir)
 		require.Error(t, err)
 		assert.IsType(t, &LocationOutsideRootDirectoryError{}, err)
+	})
+
+	t.Run("ResolveScopeToSingleKey exactly one match", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		createSchemaFiles(t, r, schemaMap{
+			k: `{"type": "object"}`,
+		})
+		ar := NewTargetResolver(r, "")
+		result, err := ar.ResolveScopeToSingleKey(context.Background(), "domain/family", "domain/family")
+		require.NoError(t, err)
+		assert.Equal(t, k, result)
+	})
+
+	t.Run("ResolveScopeToSingleKey zero matches", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		ar := NewTargetResolver(r, "")
+		_, err := ar.ResolveScopeToSingleKey(context.Background(), "nonexistent", "nonexistent")
+		require.Error(t, err)
+		assert.IsType(t, &NotFoundError{}, err)
+	})
+
+	t.Run("ResolveScopeToSingleKey zero matches with existing directory", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		ar := NewTargetResolver(r, "")
+		// Create an empty directory within the registry
+		emptyDir := filepath.Join(r.rootDirectory, "empty")
+		require.NoError(t, os.MkdirAll(emptyDir, 0o755))
+
+		_, err := ar.ResolveScopeToSingleKey(context.Background(), "empty", "empty")
+		require.Error(t, err)
+		assert.IsType(t, &NotFoundError{}, err)
+	})
+
+	t.Run("ResolveScopeToSingleKey searcher error", func(t *testing.T) {
+		t.Parallel()
+		r := setupTestRegistry(t)
+		ar := NewTargetResolver(r, "")
+
+		// Create a directory and make it unreadable
+		unreadableDir := filepath.Join(r.rootDirectory, "unreadable")
+		require.NoError(t, os.MkdirAll(unreadableDir, 0o755))
+		schemaPath := filepath.Join(unreadableDir, "some_1_0_0.schema.json")
+		require.NoError(t, os.WriteFile(schemaPath, []byte("{}"), 0o600))
+
+		require.NoError(t, os.Chmod(unreadableDir, 0o000))
+		defer func() { _ = os.Chmod(unreadableDir, 0o755) }()
+		// ResolveScopeToSingleKey should hit the error in searcher.Schemas
+		_, err := ar.ResolveScopeToSingleKey(context.Background(), "unreadable", "unreadable")
+		require.Error(t, err)
+	})
+
+	t.Run("ResolveScopeToSingleKey multiple matches", func(t *testing.T) {
+		t.Parallel()
+		// Use a separate registry to avoid interfering with other tests
+		r2 := setupTestRegistry(t)
+		createSchemaFiles(t, r2, schemaMap{
+			Key("domain_family_1_0_0"): `{"type": "object"}`,
+			Key("domain_family_2_0_0"): `{"type": "object"}`,
+		})
+		ar := NewTargetResolver(r2, "")
+		_, err := ar.ResolveScopeToSingleKey(context.Background(), "domain", "domain")
+		require.Error(t, err)
+		assert.IsType(t, &TargetArgumentTargetsMultipleSchemasError{}, err)
 	})
 }

@@ -17,6 +17,29 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/fs"
 )
 
+type mockEventWatcher struct {
+	AddFunc    func(name string) error
+	CloseFunc  func() error
+	EventsChan chan fsnotify.Event
+	ErrorsChan chan error
+}
+
+func (m *mockEventWatcher) Add(name string) error {
+	if m.AddFunc != nil {
+		return m.AddFunc(name)
+	}
+	return nil
+}
+
+func (m *mockEventWatcher) Close() error {
+	if m.CloseFunc != nil {
+		return m.CloseFunc()
+	}
+	return nil
+}
+func (m *mockEventWatcher) Events() chan fsnotify.Event { return m.EventsChan }
+func (m *mockEventWatcher) Errors() chan error          { return m.ErrorsChan }
+
 func TestWatcher(t *testing.T) {
 	t.Parallel()
 
@@ -143,20 +166,23 @@ func TestWatcher(t *testing.T) {
 		t.Parallel()
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
-		assert.Nil(t, w.handleEvent(nil, fsnotify.Event{Op: fsnotify.Chmod}))
+		mock := &mockEventWatcher{}
+		assert.Nil(t, w.handleEvent(mock, fsnotify.Event{Op: fsnotify.Chmod}))
 	})
 
 	t.Run("handleEvent - new directory", func(t *testing.T) {
 		t.Parallel()
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
-		watcher, _ := fsnotify.NewWatcher()
+		fw, _ := fsnotify.NewWatcher()
+		watcher := &eventWatcherWrapper{fw}
 		defer watcher.Close()
 
 		newDir := filepath.Join(r.RootDirectory(), "newdir")
 		require.NoError(t, os.Mkdir(newDir, 0o755))
 
-		ev := w.handleEvent(watcher, fsnotify.Event{Name: newDir, Op: fsnotify.Create})
+		mock := &mockEventWatcher{}
+		ev := w.handleEvent(mock, fsnotify.Event{Name: newDir, Op: fsnotify.Create})
 		assert.Nil(t, ev)
 		// We can't easily verify if it's being watched without private access,
 		// but this covers the code path.
@@ -166,7 +192,8 @@ func TestWatcher(t *testing.T) {
 		t.Parallel()
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
-		watcher, _ := fsnotify.NewWatcher()
+		fw, _ := fsnotify.NewWatcher()
+		watcher := &eventWatcherWrapper{fw}
 		defer watcher.Close()
 
 		hiddenDir := filepath.Join(r.RootDirectory(), ".hidden")
@@ -207,13 +234,16 @@ func TestWatcher(t *testing.T) {
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
 
-		watcher, _ := fsnotify.NewWatcher()
-		watcher.Close() // Closing it ensures Add() fails
-
 		newDir := filepath.Join(r.RootDirectory(), "faildir")
 		require.NoError(t, os.Mkdir(newDir, 0o755))
 
-		ev := w.handleEvent(watcher, fsnotify.Event{Name: newDir, Op: fsnotify.Create})
+		mock := &mockEventWatcher{
+			AddFunc: func(_ string) error {
+				return errors.New("injected add error")
+			},
+		}
+		// This will trigger w.addRecursive which calls mock.Add
+		ev := w.handleEvent(mock, fsnotify.Event{Name: newDir, Op: fsnotify.Create})
 		assert.Nil(t, ev)
 	})
 
@@ -236,7 +266,7 @@ func TestWatcher(t *testing.T) {
 		t.Parallel()
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
-		w.newWatcher = func() (*fsnotify.Watcher, error) {
+		w.newWatcher = func() (eventWatcher, error) {
 			return nil, errors.New("factory error")
 		}
 		err := w.Watch(context.Background(), func(_ WatchEvent) {})
@@ -281,12 +311,14 @@ func TestWatcher(t *testing.T) {
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
 
-		realNew := w.newWatcher
-		var internalWatcher *fsnotify.Watcher
-		w.newWatcher = func() (*fsnotify.Watcher, error) {
-			iw, err := realNew()
-			internalWatcher = iw
-			return iw, err
+		eventsChan := make(chan fsnotify.Event)
+		errorsChan := make(chan error)
+		mock := &mockEventWatcher{
+			EventsChan: eventsChan,
+			ErrorsChan: errorsChan,
+		}
+		w.newWatcher = func() (eventWatcher, error) {
+			return mock, nil
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -299,24 +331,23 @@ func TestWatcher(t *testing.T) {
 
 		<-w.Ready
 
-		// 1. Inject an error into Errors channel
-		internalWatcher.Errors <- fmt.Errorf("injected error")
-		time.Sleep(50 * time.Millisecond) // Allow logger to run
+		// 1. Inject an error into Errors channel to hit coverage
+		errorsChan <- fmt.Errorf("injected error")
 
-		// 2. Trigger handleEvent Stat error by creating and immediately deleting a file
-		// We need to trigger a Create event.
-		newDir := filepath.Join(r.RootDirectory(), "racedir")
-		require.NoError(t, os.Mkdir(newDir, 0o755))
+		// To test handleEvent in isolation safely:
+		t.Run("handleEvent isolation", func(t *testing.T) {
+			subWatcher := &mockEventWatcher{}
 
-		// Send a fake event for a non-existent file to trigger Stat error
-		internalWatcher.Events <- fsnotify.Event{Name: "/non-existent-dir-stat", Op: fsnotify.Create}
-		time.Sleep(50 * time.Millisecond)
+			// Stat error
+			ev := w.handleEvent(subWatcher, fsnotify.Event{Name: "/non-existent-stat", Op: fsnotify.Create})
+			assert.Nil(t, ev)
 
-		// 3. Trigger addRecursive failure by creating a dir then closing watcher before handleEvent processes it
-		// (Harder to time, but we can try)
-		require.NoError(t, os.Mkdir(filepath.Join(r.RootDirectory(), "failadd"), 0o755))
-
-		w.handleEvent(internalWatcher, fsnotify.Event{Name: "/non-existent", Op: fsnotify.Create})
+			// Success event
+			s, _ := r.CreateSchema("domain/event-race")
+			ev = w.handleEvent(subWatcher, fsnotify.Event{Name: s.Path(FilePath), Op: fsnotify.Write})
+			assert.NotNil(t, ev)
+			assert.Equal(t, s.Key(), ev.Key)
+		})
 
 		cancel()
 		<-done
@@ -326,8 +357,9 @@ func TestWatcher(t *testing.T) {
 		t.Parallel()
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
-		iw, err := fsnotify.NewWatcher()
+		fw, err := fsnotify.NewWatcher()
 		require.NoError(t, err)
+		iw := &eventWatcherWrapper{fw}
 		defer iw.Close()
 
 		// 1. Walk error (line 113)
@@ -362,14 +394,14 @@ func TestWatcher(t *testing.T) {
 		w := NewWatcher(r, logger)
 
 		// 1. newWatcher error (line 47)
-		w.newWatcher = func() (*fsnotify.Watcher, error) {
+		w.newWatcher = func() (eventWatcher, error) {
 			return nil, fmt.Errorf("newWatcher fail")
 		}
 		err := w.Watch(context.Background(), nil)
 		require.Error(t, err)
 
 		// 2. addRecursive error (line 52)
-		w.newWatcher = fsnotify.NewWatcher // reset
+		w.newWatcher = defaultWatcherFactory // reset
 		tmp := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(tmp, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
 		reg, _ := NewRegistry(tmp, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
@@ -384,12 +416,13 @@ func TestWatcher(t *testing.T) {
 		r := setupTestRegistry(t)
 		w := NewWatcher(r, logger)
 
-		realNew := w.newWatcher
-		var internalWatcher *fsnotify.Watcher
-		w.newWatcher = func() (*fsnotify.Watcher, error) {
-			iw, err := realNew()
-			internalWatcher = iw
-			return iw, err
+		eventsChan := make(chan fsnotify.Event)
+		mock := &mockEventWatcher{
+			EventsChan: eventsChan,
+			ErrorsChan: make(chan error),
+		}
+		w.newWatcher = func() (eventWatcher, error) {
+			return mock, nil
 		}
 
 		done := make(chan error, 1)
@@ -399,11 +432,19 @@ func TestWatcher(t *testing.T) {
 
 		<-w.Ready
 
-		// Close the internal watcher to trigger channel closure paths
-		internalWatcher.Close()
+		// Close the events channel to trigger closure path
+		close(eventsChan)
 
 		// Watch should return nil when channels are closed
 		err := <-done
 		assert.NoError(t, err)
+	})
+
+	t.Run("createWatcher - error", func(t *testing.T) {
+		t.Parallel()
+		_, err := createWatcher(func() (*fsnotify.Watcher, error) {
+			return nil, fmt.Errorf("injected factory fail")
+		})
+		assert.ErrorContains(t, err, "injected factory fail")
 	})
 }

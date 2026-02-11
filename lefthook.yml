@@ -24,7 +24,7 @@ pre-commit:
     lint:
       run: go run scripts/lint/main.go
     test-race:
-      run: go run scripts/tester/main.go -race ./... -v
+      run: go run scripts/tester/main.go -race -count=1 ./... -v
     check-coverage:
       run: go run scripts/tester/main.go --check-coverage -count=1 -race ./...
     release-check:
