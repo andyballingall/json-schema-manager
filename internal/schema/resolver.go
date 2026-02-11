@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -196,4 +197,32 @@ func (a *TargetResolver) resolvePathToScope(path string) (SearchScope, error) {
 	// SearchScope uses '/' as separator regardless of OS
 	scope := filepath.ToSlash(rel)
 	return SearchScope(scope), nil
+}
+
+// ResolveScopeToSingleKey searches the registry for schemas matching the given scope.
+// If exactly one schema is found, it returns its Key.
+// If zero schemas are found, it returns a NotFoundError.
+// If two or more schemas are found, it returns a TargetArgumentTargetsMultipleSchemasError.
+func (a *TargetResolver) ResolveScopeToSingleKey(ctx context.Context, scope SearchScope, arg string) (Key, error) {
+	searcher, err := NewSearcher(a.registry, scope)
+	if err != nil {
+		return "", &NotFoundError{Path: string(scope)}
+	}
+
+	keys := make([]Key, 0, 2)
+	for res := range searcher.Schemas(ctx) {
+		if res.Err != nil {
+			return "", res.Err
+		}
+		keys = append(keys, res.Key)
+		if len(keys) > 1 {
+			return "", &TargetArgumentTargetsMultipleSchemasError{Arg: arg}
+		}
+	}
+
+	if len(keys) == 0 {
+		return "", &NotFoundError{Path: string(scope)}
+	}
+
+	return keys[0], nil
 }

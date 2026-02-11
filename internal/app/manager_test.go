@@ -138,7 +138,7 @@ func setupTestRegistry(t *testing.T) *schema.Registry {
 
 func TestCLIManager_ValidateSchema(t *testing.T) {
 	t.Parallel()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := setupTestRegistry(t)
 
 	// Create a schema file so ValidateSchema has something to test
@@ -154,7 +154,7 @@ func TestCLIManager_ValidateSchema(t *testing.T) {
 	t.Run("successful validation", func(t *testing.T) {
 		t.Parallel()
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 		vErr := mgr.ValidateSchema(context.Background(), schema.ResolvedTarget{Key: &key},
 			false, "text", false, false, schema.TestScopeLocal, false)
 		require.NoError(t, vErr)
@@ -163,7 +163,7 @@ func TestCLIManager_ValidateSchema(t *testing.T) {
 	t.Run("successful JSON validation", func(t *testing.T) {
 		t.Parallel()
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 		vErr := mgr.ValidateSchema(context.Background(), schema.ResolvedTarget{Key: &key},
 			false, "json", false, false, schema.TestScopeLocal, false)
 		require.NoError(t, vErr)
@@ -172,7 +172,7 @@ func TestCLIManager_ValidateSchema(t *testing.T) {
 	t.Run("successful verbose validation", func(t *testing.T) {
 		t.Parallel()
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 		vErr := mgr.ValidateSchema(context.Background(), schema.ResolvedTarget{Key: &key},
 			true, "text", false, false, schema.TestScopeLocal, false)
 		require.NoError(t, vErr)
@@ -181,7 +181,7 @@ func TestCLIManager_ValidateSchema(t *testing.T) {
 	t.Run("validation error", func(t *testing.T) {
 		t.Parallel()
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 		// Non-existent path
 		scope := schema.SearchScope("non/existent/path")
 		vErr := mgr.ValidateSchema(context.Background(), schema.ResolvedTarget{Scope: &scope},
@@ -192,7 +192,7 @@ func TestCLIManager_ValidateSchema(t *testing.T) {
 	t.Run("tester error", func(t *testing.T) {
 		t.Parallel()
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 		// This will fail because the path is outside the registry root
 		tKey := schema.Key("outside_key_1_0_0")
 		vErr := mgr.ValidateSchema(context.Background(), schema.ResolvedTarget{Key: &tKey},
@@ -203,7 +203,7 @@ func TestCLIManager_ValidateSchema(t *testing.T) {
 	t.Run("no identification method provided", func(t *testing.T) {
 		t.Parallel()
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 		vErr := mgr.ValidateSchema(context.Background(), schema.ResolvedTarget{},
 			false, "text", false, false, schema.TestScopeLocal, false)
 		require.Error(t, vErr)
@@ -231,7 +231,7 @@ environments:
 		require.NoError(t, os.MkdirAll(tHomeDir, 0o755))
 		require.NoError(t, os.WriteFile(s2.Path(schema.FilePath), []byte(`{}`), 0o600))
 
-		mgr2 := NewCLIManager(logger, r, schema.NewTester(r), &MockGitter{}, nil)
+		mgr2 := NewCLIManager(logger, r, schema.NewTester(r), &MockGitter{}, nil, io.Discard)
 		vErr := mgr2.ValidateSchema(context.Background(), schema.ResolvedTarget{Key: &tKey},
 			false, "text", false, false, schema.TestScopeLocal, false)
 		require.Error(t, vErr)
@@ -259,7 +259,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 	t.Run("successful watch start and stop", func(t *testing.T) {
 		t.Parallel()
 		registry, key, _ := setupWatchTest(t)
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		readyChan := make(chan struct{}, 1)
@@ -283,7 +283,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 	t.Run("no identification method provided", func(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
-		mgr := NewCLIManager(logger, registry, nil, nil, nil)
+		mgr := NewCLIManager(logger, registry, nil, nil, nil, io.Discard)
 		err := mgr.WatchValidation(context.Background(), schema.ResolvedTarget{},
 			false, "text", false, false, schema.TestScopeLocal, false, nil)
 		require.Error(t, err)
@@ -293,7 +293,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 	t.Run("triggered watch event", func(t *testing.T) {
 		t.Parallel()
 		registry, key, s := setupWatchTest(t)
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -317,7 +317,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 	t.Run("triggered test doc event", func(t *testing.T) {
 		t.Parallel()
 		registry, key, s := setupWatchTest(t)
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -341,11 +341,8 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 	t.Run("WatchValidation JSON format", func(t *testing.T) {
 		t.Parallel()
 		registry, key, s := setupWatchTest(t)
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
-
-		// Capture output to verify the JSON reporter is used
 		var buf safeBuffer
-		mgr.reporterWriter = &buf
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, &buf)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -376,7 +373,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 	t.Run("triggered invalid schema change", func(t *testing.T) {
 		t.Parallel()
 		registry, key, s := setupWatchTest(t)
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -399,7 +396,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 	t.Run("WatchValidation - no target", func(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
-		mgr := NewCLIManager(logger, registry, nil, nil, nil)
+		mgr := NewCLIManager(logger, registry, nil, nil, nil, io.Discard)
 		err := mgr.WatchValidation(context.Background(), schema.ResolvedTarget{},
 			false, "text", false, false, schema.TestScopeLocal, false, nil)
 		require.Error(t, err)
@@ -416,7 +413,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 		require.NoError(t, os.MkdirAll(s2.Path(schema.HomeDir), 0o755))
 		require.NoError(t, os.WriteFile(s2.Path(schema.FilePath), []byte("{}"), 0o600))
 
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -448,7 +445,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 		require.NoError(t, os.MkdirAll(s3.Path(schema.HomeDir), 0o755))
 		require.NoError(t, os.WriteFile(s3.Path(schema.FilePath), []byte("{}"), 0o600))
 
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -497,7 +494,7 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 		// Set up manager with REAL compiler and log capture
 		var logBuf safeBuffer
 		testLogger := slog.New(slog.NewTextHandler(&logBuf, nil))
-		mgr := NewCLIManager(testLogger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+		mgr := NewCLIManager(testLogger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -526,6 +523,29 @@ func TestCLIManager_WatchValidation(t *testing.T) {
 		// Assert that the bug is NOT present
 		assert.NotContains(t, logBuf.String(), "already exists")
 	})
+
+	t.Run("WatchValidation reporter error", func(t *testing.T) {
+		t.Parallel()
+		registry, key, s := setupWatchTest(t)
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, &failingWriter{})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		readyChan := make(chan struct{}, 1)
+		go func() {
+			_ = mgr.WatchValidation(ctx, schema.ResolvedTarget{Key: &key},
+				false, "text", false, false, schema.TestScopeLocal, false, readyChan)
+		}()
+
+		<-readyChan
+		require.NoError(t, os.WriteFile(s.Path(schema.FilePath),
+			[]byte(`{"type": "object", "title": "updated"}`), 0o600))
+
+		// Wait for processing
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+	})
 }
 
 func TestCLIManager_CreateSchema(t *testing.T) {
@@ -536,7 +556,7 @@ func TestCLIManager_CreateSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		key, err := mgr.CreateSchema("test-domain/test-family")
 		require.NoError(t, err)
@@ -547,7 +567,7 @@ func TestCLIManager_CreateSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		_, err := mgr.CreateSchema("INVALID/scope")
 		require.Error(t, err)
@@ -562,7 +582,7 @@ func TestCLIManager_CreateSchemaVersion(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		// Create base schema
 		baseKey := schema.Key("d1_f1_1_0_0")
@@ -579,7 +599,7 @@ func TestCLIManager_CreateSchemaVersion(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		_, err := mgr.CreateSchemaVersion(schema.Key("missing_1_0_0"), schema.ReleaseTypeMajor)
 		require.Error(t, err)
@@ -594,7 +614,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		// Create base schema
 		baseKey := schema.Key("d1_f1_1_0_0")
@@ -612,7 +632,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -629,7 +649,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		target := schema.ResolvedTarget{Key: &baseKey}
@@ -642,7 +662,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		target := schema.ResolvedTarget{}
 		_, err := mgr.RenderSchema(context.Background(), target, "prod")
@@ -654,7 +674,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		t.Parallel()
 		registry := &schema.Registry{}
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		target := schema.ResolvedTarget{Key: &baseKey}
@@ -666,7 +686,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("missing_1_0_0")
 		target := schema.ResolvedTarget{Key: &baseKey}
@@ -678,7 +698,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -703,7 +723,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		require.NoError(t, err)
 
 		tester := schema.NewTester(registry)
-		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, tester, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -724,7 +744,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 	t.Run("GetSchemaByKey failure - unreadable dir", func(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -744,7 +764,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 	t.Run("CoordinateRender failure - bad template", func(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -759,7 +779,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 	t.Run("CoordinateRender failure - bad JSM key", func(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -775,7 +795,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 	t.Run("CoordinateRender failure - missing dependency", func(t *testing.T) {
 		t.Parallel()
 		registry := setupTestRegistry(t)
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -794,7 +814,7 @@ func TestCLIManager_RenderSchema(t *testing.T) {
 		cfgPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(testConfigData), 0o600))
 		registry, _ := schema.NewRegistry(tmpDir, &failingCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil, io.Discard)
 
 		baseKey := schema.Key("d1_f1_1_0_0")
 		s := schema.New(baseKey, registry)
@@ -811,12 +831,12 @@ func TestCLIManager_CheckChanges(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := setupTestRegistry(t)
-	mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
+	mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil, io.Discard)
 
 	t.Run("config error", func(t *testing.T) {
 		t.Parallel()
 		// Use an empty registry to simulate uninitialised config
-		m := NewCLIManager(logger, &schema.Registry{}, nil, &MockGitter{}, nil)
+		m := NewCLIManager(logger, &schema.Registry{}, nil, &MockGitter{}, nil, io.Discard)
 		err := m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
 	})
@@ -838,7 +858,7 @@ func TestCLIManager_CheckChanges(t *testing.T) {
 
 		cfg2, err := registry2.Config()
 		require.NoError(t, err)
-		m := NewCLIManager(logger, registry2, nil, repo.NewCLIGitter(cfg2, fs.NewPathResolver(), dir), nil)
+		m := NewCLIManager(logger, registry2, nil, repo.NewCLIGitter(cfg2, fs.NewPathResolver(), dir), nil, io.Discard)
 
 		err = m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
@@ -868,7 +888,7 @@ func TestCLIManager_CheckChanges(t *testing.T) {
 		registry4, err := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		require.NoError(t, err)
 
-		m := NewCLIManager(logger, registry4, nil, &MockGitter{}, nil)
+		m := NewCLIManager(logger, registry4, nil, &MockGitter{}, nil, io.Discard)
 
 		// No changes
 		err = m.CheckChanges(context.Background(), "prod")
@@ -912,7 +932,7 @@ func TestCLIManager_CheckChanges(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
 		r, _ := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
 		rcfg, _ := r.Config()
-		m := NewCLIManager(logger, r, nil, repo.NewCLIGitter(rcfg, fs.NewPathResolver(), dir), nil)
+		m := NewCLIManager(logger, r, nil, repo.NewCLIGitter(rcfg, fs.NewPathResolver(), dir), nil, io.Discard)
 
 		err := m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
@@ -948,7 +968,7 @@ environments:
 		cfgPath := filepath.Join(dir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(cfgWithMutation), 0o600))
 		r, _ := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
-		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil)
+		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil, io.Discard)
 
 		err := m.CheckChanges(context.Background(), "prod")
 		require.NoError(t, err)
@@ -962,7 +982,7 @@ environments:
 				return nil, fmt.Errorf("git diff failed")
 			},
 		}
-		m := NewCLIManager(logger, r, nil, mockGitter, nil)
+		m := NewCLIManager(logger, r, nil, mockGitter, nil, io.Discard)
 
 		err := m.CheckChanges(context.Background(), "prod")
 		require.Error(t, err)
@@ -974,11 +994,11 @@ func TestCLIManager_TagDeployment(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := setupTestRegistry(t)
-	mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil)
+	mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, nil, io.Discard)
 
 	t.Run("config error", func(t *testing.T) {
 		t.Parallel()
-		m := NewCLIManager(logger, &schema.Registry{}, nil, &MockGitter{}, nil)
+		m := NewCLIManager(logger, &schema.Registry{}, nil, &MockGitter{}, nil, io.Discard)
 		err := m.TagDeployment(context.Background(), "prod")
 		require.Error(t, err)
 	})
@@ -999,7 +1019,7 @@ func TestCLIManager_TagDeployment(t *testing.T) {
 
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
 		r, _ := schema.NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
-		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil)
+		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil, io.Discard)
 
 		// This calls g.TagDeploymentSuccess() which will fail push but return tagName
 		err := m.TagDeployment(context.Background(), "prod")
@@ -1014,7 +1034,7 @@ func TestCLIManager_TagDeployment(t *testing.T) {
 				return "", fmt.Errorf("failed to create git tag")
 			},
 		}
-		m := NewCLIManager(logger, r, nil, mockGitter, nil)
+		m := NewCLIManager(logger, r, nil, mockGitter, nil, io.Discard)
 
 		err := m.TagDeployment(context.Background(), "prod")
 		require.Error(t, err)
@@ -1037,7 +1057,7 @@ func TestCLIManager_TagDeployment(t *testing.T) {
 		cfgPath := filepath.Join(repoDir, "json-schema-manager-config.yml")
 		require.NoError(t, os.WriteFile(cfgPath, []byte(testConfigData), 0o600))
 		r, _ := schema.NewRegistry(repoDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
-		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil)
+		m := NewCLIManager(logger, r, nil, &MockGitter{}, nil, io.Discard)
 
 		err := m.TagDeployment(context.Background(), "prod")
 		require.NoError(t, err)
@@ -1066,7 +1086,7 @@ func TestCLIManager_TagDeployment(t *testing.T) {
 			},
 		}
 
-		m := NewCLIManager(logger, r, nil, mockGitter, nil)
+		m := NewCLIManager(logger, r, nil, mockGitter, nil, io.Discard)
 
 		err := m.TagDeployment(context.Background(), "prod")
 		require.NoError(t, err) // Should return nil if tag created but push failed
@@ -1086,7 +1106,7 @@ func TestCLIManager_BuildDist(t *testing.T) {
 				return 5, nil
 			},
 		}
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder, io.Discard)
 
 		err := mgr.BuildDist(context.Background(), "prod", true)
 		require.NoError(t, err)
@@ -1101,7 +1121,7 @@ func TestCLIManager_BuildDist(t *testing.T) {
 				return 3, nil
 			},
 		}
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder, io.Discard)
 
 		err := mgr.BuildDist(context.Background(), "prod", false)
 		require.NoError(t, err)
@@ -1115,7 +1135,7 @@ func TestCLIManager_BuildDist(t *testing.T) {
 				return 0, nil
 			},
 		}
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder, io.Discard)
 
 		err := mgr.BuildDist(context.Background(), "prod", true)
 		require.NoError(t, err)
@@ -1129,7 +1149,7 @@ func TestCLIManager_BuildDist(t *testing.T) {
 				return 0, fmt.Errorf("build failed")
 			},
 		}
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder, io.Discard)
 
 		err := mgr.BuildDist(context.Background(), "prod", true)
 		require.Error(t, err)
@@ -1145,7 +1165,7 @@ func TestCLIManager_BuildDist(t *testing.T) {
 				return []repo.Change{{Path: "mutated.schema.json", IsNew: false}}, nil
 			},
 		}
-		mgr := NewCLIManager(logger, registry, nil, mockGitter, nil)
+		mgr := NewCLIManager(logger, registry, nil, mockGitter, nil, io.Discard)
 
 		err := mgr.BuildDist(context.Background(), "prod", false)
 		require.Error(t, err)
@@ -1165,7 +1185,7 @@ func TestCLIManager_BuildDist(t *testing.T) {
 				return "", fmt.Errorf("git anchor failed")
 			},
 		}
-		mgr := NewCLIManager(logger, registry, nil, mockGitter, nil)
+		mgr := NewCLIManager(logger, registry, nil, mockGitter, nil, io.Discard)
 
 		err := mgr.BuildDist(context.Background(), "prod", false)
 		require.Error(t, err)
@@ -1180,7 +1200,7 @@ func TestCLIManager_BuildDist(t *testing.T) {
 				return 0, fmt.Errorf("build changed failed")
 			},
 		}
-		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder)
+		mgr := NewCLIManager(logger, registry, nil, &MockGitter{}, mockBuilder, io.Discard)
 
 		err := mgr.BuildDist(context.Background(), "prod", false)
 		require.Error(t, err)
@@ -1207,7 +1227,7 @@ func TestCLIManager_Registry(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := setupTestRegistry(t)
-	mgr := NewCLIManager(logger, registry, nil, nil, nil)
+	mgr := NewCLIManager(logger, registry, nil, nil, nil, io.Discard)
 
 	assert.Equal(t, registry, mgr.Registry())
 }
@@ -1297,8 +1317,7 @@ func TestCLIManager_WatchValidation_ReporterError(t *testing.T) {
 	require.NoError(t, os.WriteFile(s.Path(schema.FilePath), []byte("{}"), 0o600))
 	require.NoError(t, os.MkdirAll(filepath.Join(s.Path(schema.HomeDir), "pass"), 0o755))
 
-	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
-	mgr.reporterWriter = &failingWriter{}
+	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, &failingWriter{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1336,7 +1355,7 @@ func TestCLIManager_WatchValidation_CallbackErrors(t *testing.T) {
 	}
 
 	key, s := setupSchema("domain_family_1_0_0")
-	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 	t.Run("callback load error handling", func(t *testing.T) {
 		t.Parallel()
@@ -1378,7 +1397,7 @@ func TestCLIManager_WatchValidation_EdgeCases(t *testing.T) {
 	}
 
 	key, s := setupSchema("domain_family_1_0_0")
-	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
+	mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 	t.Run("callback error handling", func(t *testing.T) {
 		t.Parallel()
@@ -1419,7 +1438,7 @@ func TestCLIManager_WatchValidation_EdgeCases(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(sch.Path(schema.HomeDir), "pass"), 0o755))
 		require.NoError(t, os.MkdirAll(filepath.Join(sch.Path(schema.HomeDir), "fail"), 0o755))
 
-		mgr := NewCLIManager(logger, reg, schema.NewTester(reg), &MockGitter{}, nil)
+		mgr := NewCLIManager(logger, reg, schema.NewTester(reg), &MockGitter{}, nil, io.Discard)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -1445,8 +1464,7 @@ func TestCLIManager_WatchValidation_EdgeCases(t *testing.T) {
 		defer cancel()
 
 		// Reuse main registry but use failing writer
-		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil)
-		mgr.reporterWriter = &failingWriter{}
+		mgr := NewCLIManager(logger, registry, schema.NewTester(registry), &MockGitter{}, nil, io.Discard)
 
 		readyChan := make(chan struct{}, 1)
 		done := make(chan error, 1)

@@ -25,7 +25,7 @@ test:
 
 # Run tests with race detection
 test-race:
-	@go run scripts/tester/main.go -race ./... -v
+	@go run scripts/tester/main.go -race -count=1 ./... -v
 
 # Run tests with coverage and show summary
 test-cover:

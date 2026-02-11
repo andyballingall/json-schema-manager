@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 
@@ -118,6 +117,7 @@ func NewCLIManager(
 	t *schema.Tester,
 	g repo.Gitter,
 	db schema.DistBuilder,
+	rw io.Writer,
 ) *CLIManager {
 	return &CLIManager{
 		logger:         l,
@@ -125,7 +125,7 @@ func NewCLIManager(
 		tester:         t,
 		gitter:         g,
 		distBuilder:    db,
-		reporterWriter: os.Stdout,
+		reporterWriter: rw,
 	}
 }
 

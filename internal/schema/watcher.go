@@ -20,13 +20,44 @@ type WatchEvent struct {
 	TestPath string // If set, only this specific test document changed
 }
 
+// eventWatcher is an interface that masks fsnotify.Watcher, allowing us to mock it in tests.
+type eventWatcher interface {
+	Add(name string) error
+	Close() error
+	Events() chan fsnotify.Event
+	Errors() chan error
+}
+
+// eventWatcherWrapper wraps fsnotify.Watcher to implement the eventWatcher interface.
+type eventWatcherWrapper struct {
+	*fsnotify.Watcher
+}
+
+func (w *eventWatcherWrapper) Events() chan fsnotify.Event { return w.Watcher.Events }
+func (w *eventWatcherWrapper) Errors() chan error          { return w.Watcher.Errors }
+
+// eventWatcherFactory is a function that returns a new eventWatcher.
+type eventWatcherFactory func() (eventWatcher, error)
+
+func defaultWatcherFactory() (eventWatcher, error) {
+	return createWatcher(fsnotify.NewWatcher)
+}
+
+func createWatcher(newFn func() (*fsnotify.Watcher, error)) (eventWatcher, error) {
+	w, err := newFn()
+	if err != nil {
+		return nil, err
+	}
+	return &eventWatcherWrapper{w}, nil
+}
+
 // Watcher monitors the registry for file changes and triggers validation.
 type Watcher struct {
 	registry *Registry
 	logger   *slog.Logger
 	Ready    chan struct{}
 
-	newWatcher func() (*fsnotify.Watcher, error)
+	newWatcher eventWatcherFactory
 }
 
 // NewWatcher creates a new Watcher for the given registry.
@@ -35,7 +66,7 @@ func NewWatcher(r *Registry, logger *slog.Logger) *Watcher {
 		registry:   r,
 		logger:     logger.With("component", "watcher"),
 		Ready:      make(chan struct{}),
-		newWatcher: fsnotify.NewWatcher,
+		newWatcher: defaultWatcherFactory,
 	}
 }
 
@@ -59,15 +90,14 @@ func (w *Watcher) Watch(ctx context.Context, callback func(WatchEvent)) error {
 
 	var timer *time.Timer
 	const debounceDuration = 100 * time.Millisecond
-	var pendingEvent *WatchEvent
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-watcher.Errors:
+		case err := <-watcher.Errors():
 			w.logger.Error("Watcher error", "error", err)
-		case event, ok := <-watcher.Events:
+		case event, ok := <-watcher.Events():
 			if !ok {
 				return nil
 			}
@@ -75,9 +105,9 @@ func (w *Watcher) Watch(ctx context.Context, callback func(WatchEvent)) error {
 				if timer != nil {
 					timer.Stop()
 				}
-				pendingEvent = ev
+				eventToCallback := *ev
 				timer = time.AfterFunc(debounceDuration, func() {
-					callback(*pendingEvent)
+					callback(eventToCallback)
 				})
 			}
 		}
@@ -86,7 +116,7 @@ func (w *Watcher) Watch(ctx context.Context, callback func(WatchEvent)) error {
 
 // handleEvent processes a single fsnotify event. If it's a new directory, it adds it to the watcher.
 // If it's a relevant file change, it returns a pointer to a WatchEvent.
-func (w *Watcher) handleEvent(watcher *fsnotify.Watcher, event fsnotify.Event) *WatchEvent {
+func (w *Watcher) handleEvent(watcher eventWatcher, event fsnotify.Event) *WatchEvent {
 	if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) {
 		return nil
 	}
@@ -105,7 +135,7 @@ func (w *Watcher) handleEvent(watcher *fsnotify.Watcher, event fsnotify.Event) *
 }
 
 // addRecursive adds the given path and all its subdirectories to the watcher.
-func (w *Watcher) addRecursive(watcher *fsnotify.Watcher, root string) error {
+func (w *Watcher) addRecursive(watcher eventWatcher, root string) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

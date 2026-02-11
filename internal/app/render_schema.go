@@ -46,7 +46,11 @@ func NewRenderSchemaCmd(mgr Manager) *cobra.Command {
 			}
 
 			if target.Key == nil {
-				return &schema.TargetArgumentTargetsMultipleSchemasError{Arg: targetArg}
+				resolvedKey, sErr := resolver.ResolveScopeToSingleKey(cmd.Context(), *target.Scope, targetArg)
+				if sErr != nil {
+					return sErr
+				}
+				target.Key = &resolvedKey
 			}
 
 			rendered, err := mgr.RenderSchema(cmd.Context(), target, config.Env(envStr))

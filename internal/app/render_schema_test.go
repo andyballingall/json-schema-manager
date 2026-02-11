@@ -19,20 +19,6 @@ import (
 func TestNewRenderSchemaCmd(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := t.TempDir()
-	// Create a dummy config file so Initialise doesn't fail
-	configPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
-	require.NoError(t, os.WriteFile(configPath, []byte(simpleTestConfig), 0o600))
-
-	reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
-	require.NoError(t, rErr)
-
-	familyDir := filepath.Join(tmpDir, "domain", "family")
-	versionDir := filepath.Join(familyDir, "1", "0", "0")
-	require.NoError(t, os.MkdirAll(versionDir, 0o755))
-	schemaFile := filepath.Join(versionDir, "domain_family_1_0_0.schema.json")
-	require.NoError(t, os.WriteFile(schemaFile, []byte("{}"), 0o600))
-
 	baseKey := schema.Key("domain_family_1_0_0")
 	renderedBytes := []byte(`{"type": "object"}`)
 
@@ -93,10 +79,20 @@ func TestNewRenderSchemaCmd(t *testing.T) {
 			wantErrType: &schema.NoTargetArgumentError{},
 		},
 		{
-			name:        "Multiple schemas",
-			args:        []string{"domain/family"},
+			name: "Scope resolves to single schema",
+			args: []string{"domain/family"},
+			setupMock: func(m *MockManager) {
+				m.On("RenderSchema", mock.Anything, mock.MatchedBy(func(rt schema.ResolvedTarget) bool {
+					return rt.Key != nil && *rt.Key == baseKey
+				}), config.Env("")).Return(renderedBytes, nil)
+			},
+			wantOutput: string(renderedBytes),
+		},
+		{
+			name:        "Scope resolves to zero schemas",
+			args:        []string{"nonexistent"},
 			wantErr:     true,
-			wantErrType: &schema.TargetArgumentTargetsMultipleSchemasError{},
+			wantErrType: &schema.NotFoundError{},
 		},
 		{
 			name: "Manager error",
@@ -111,6 +107,22 @@ func TestNewRenderSchemaCmd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
+			// Setup an isolated temporary registry root for this subtest
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
+			require.NoError(t, os.WriteFile(configPath, []byte(simpleTestConfig), 0o600))
+
+			reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+			require.NoError(t, rErr)
+
+			// Create a dummy schema file for resolution to work
+			familyDir := filepath.Join(tmpDir, "domain", "family")
+			versionDir := filepath.Join(familyDir, "1", "0", "0")
+			require.NoError(t, os.MkdirAll(versionDir, 0o755))
+			schemaFile := filepath.Join(versionDir, "domain_family_1_0_0.schema.json")
+			require.NoError(t, os.WriteFile(schemaFile, []byte("{}"), 0o600))
+
 			m := &MockManager{registry: reg}
 			if tt.setupMock != nil {
 				tt.setupMock(m)

@@ -79,9 +79,14 @@ IDENTIFYING A TARGET SCHEMA
 		}
 
 		k := target.Key
-		// For this command, we need the resolver to resolve to a single schema:
-		if k == nil {
-			return &schema.TargetArgumentTargetsMultipleSchemasError{Arg: targetArg}
+		// For this command, we need the resolver to resolve to a single schema.
+		// If we got a scope instead of a key, try to resolve it to a single schema.
+		if target.Key == nil {
+			resolvedKey, sErr := resolver.ResolveScopeToSingleKey(cmd.Context(), *target.Scope, targetArg)
+			if sErr != nil {
+				return sErr
+			}
+			k = &resolvedKey
 		}
 
 		kNew, cErr := mgr.CreateSchemaVersion(*k, releaseType)

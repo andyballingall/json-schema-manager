@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -20,6 +21,8 @@ func TestValidateCmd(t *testing.T) {
 			registry: &schema.Registry{},
 		}
 		cmd := NewValidateCmd(mgr)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
 		// Add the persistent flags that NewValidateCmd expects from root
 		cmd.Flags().Bool("nocolour", false, "")
 		return mgr, cmd
