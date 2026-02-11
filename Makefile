@@ -39,6 +39,10 @@ check-coverage:
 cover-html:
 	@go run scripts/tester/main.go --browser -count=1 -race ./...
 
+# Generate coverage badge
+test-badge:
+	@go run scripts/tester/main.go --badge -count=1 -race ./...
+
 # Run linter
 lint:
 	@go run scripts/lint/main.go

@@ -7,8 +7,11 @@
 
 # JSON Schema Manager (jsm)
 
-![Build Status](https://github.com/andyballingall/json-schema-manager/actions/workflows/ci.yml/badge.svg)
+[![Build Status](https://github.com/andyballingall/json-schema-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/andyballingall/json-schema-manager/actions/workflows/ci.yml)
 ![Coverage Status](https://github.com/andyballingall/json-schema-manager/wiki/coverage.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/andyballingall/json-schema-manager)](https://goreportcard.com/report/github.com/andyballingall/json-schema-manager)
+[![Go Reference](https://pkg.go.dev/badge/github.com/andyballingall/json-schema-manager.svg)](https://pkg.go.dev/github.com/andyballingall/json-schema-manager)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 JSON Schema Manager (JSM) is a framework that provides a robust workflow and firm foundations for organisations which need to develop, test, deploy, and evolve JSON Schemas over time.
 

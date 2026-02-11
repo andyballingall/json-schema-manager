@@ -16,6 +16,7 @@ func main() {
 	checkCoverage := false
 	showSummary := false
 	openBrowser := false
+	generateBadge := false
 	coverageFile := ""
 
 	for _, arg := range args {
@@ -26,6 +27,8 @@ func main() {
 			showSummary = true
 		case arg == "--browser":
 			openBrowser = true
+		case arg == "--badge":
+			generateBadge = true
 		case strings.HasPrefix(arg, "-coverprofile="):
 			coverageFile = strings.TrimPrefix(arg, "-coverprofile=")
 			testArgs = append(testArgs, arg)
@@ -35,7 +38,7 @@ func main() {
 	}
 
 	// Any coverage-related flag triggers the coverage setup
-	isCoverageRun := checkCoverage || showSummary || openBrowser
+	isCoverageRun := checkCoverage || showSummary || openBrowser || generateBadge
 
 	if isCoverageRun {
 		if coverageFile == "" {
@@ -71,6 +74,8 @@ func main() {
 		runCommand("go", []string{"tool", "cover", "-func", coverageFile})
 	case openBrowser:
 		runCommand("go", []string{"tool", "cover", "-html", coverageFile})
+	case generateBadge:
+		generateCoverageBadge(coverageFile)
 	}
 }
 
@@ -107,6 +112,68 @@ func checkCoverageThresholds(coverageFile string) {
 	}
 	fmt.Printf("✅ Coverage check passed - 100%% coverage of internal packages achieved, " +
 		"excluding approved exceptions\n")
+}
+
+func generateCoverageBadge(coverageFile string) {
+	cmd := exec.Command("go", "tool", "cover", "-func", coverageFile)
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("❌ Error running go tool cover: %v\n", err)
+		os.Exit(1)
+	}
+
+	_, totalLine := parseCoverageOutput(output)
+	if totalLine == "" {
+		fmt.Println("❌ Could not find total coverage in output")
+		os.Exit(1)
+	}
+
+	parts := strings.Fields(totalLine)
+	percentageStr := parts[len(parts)-1] // e.g. "99.8%"
+
+	var percentage float64
+	if _, err := fmt.Sscanf(strings.TrimSuffix(percentageStr, "%"), "%f", &percentage); err != nil {
+		fmt.Printf("❌ Error parsing coverage percentage: %v\n", err)
+		os.Exit(1)
+	}
+
+	color := "#e05d44" // red
+	switch {
+	case percentage >= 100:
+		color = "#4c1" // green
+	case percentage >= 90:
+		color = "#a4a61d" // yellowgreen
+	case percentage >= 80:
+		color = "#dfb317" // yellow
+	case percentage >= 70:
+		color = "#fe7d37" // orange
+	}
+
+	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="104" height="20">
+  <linearGradient id="b" x2="0" y2="100%%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <mask id="a"><rect width="104" height="20" rx="3" fill="#fff"/></mask>
+  <g mask="url(#a)">
+    <path fill="#555" d="M0 0h67v20H0z"/>
+    <path fill="%s" d="M67 0h37v20H67z"/>
+    <path fill="url(#b)" d="M0 0h104v20H0z"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
+    <text x="33.5" y="15" fill="#010101" fill-opacity=".3">coverage</text>
+    <text x="33.5" y="14">coverage</text>
+    <text x="84.5" y="15" fill="#010101" fill-opacity=".3">%s</text>
+    <text x="84.5" y="14">%s</text>
+  </g>
+</svg>`, color, percentageStr, percentageStr)
+
+	err = os.WriteFile("coverage.svg", []byte(svg), 0o600)
+	if err != nil {
+		fmt.Printf("❌ Error writing coverage.svg: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("✅ Coverage badge generated: coverage.svg (%s)\n", percentageStr)
 }
 
 func parseCoverageOutput(output []byte) (failures []string, totalLine string) {
