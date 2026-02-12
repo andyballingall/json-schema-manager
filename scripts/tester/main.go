@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -163,6 +164,9 @@ func generateCoverageBadge(coverageFile string) {
 		os.Exit(1)
 	}
 
+	percentageInt := int(math.Round(percentage))
+	percentageDisplay := fmt.Sprintf("%d%%", percentageInt)
+
 	colour := "#e05d44" // red
 	switch {
 	case percentage >= 100:
@@ -193,7 +197,7 @@ func generateCoverageBadge(coverageFile string) {
     <text x="84.5" y="15" fill="#010101" fill-opacity=".3">%s</text>
     <text x="84.5" y="14">%s</text>
   </g>
-</svg>`, colour, percentageStr, percentageStr)
+</svg>`, colour, percentageDisplay, percentageDisplay)
 
 	err = os.WriteFile("coverage.svg", []byte(svg), 0o600)
 	if err != nil {
