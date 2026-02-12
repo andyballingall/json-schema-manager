@@ -32,7 +32,7 @@ jobs:
             - name: Install dependencies
               run: |
                   go version
-                  make setup
+                  make setup-ci
 
             - name: Run Linter
               run: make lint
