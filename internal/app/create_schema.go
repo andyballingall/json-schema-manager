@@ -1,13 +1,12 @@
 package app
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
+// NewCreateSchemaCmd returns a new cobra command for creating a schema.
 func NewCreateSchemaCmd(mgr Manager) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create-schema [domain/family]",
@@ -18,21 +17,21 @@ func NewCreateSchemaCmd(mgr Manager) *cobra.Command {
 jsm create-schema "domain-a/family-a"
 jsm create-schema "domain-a/subdomain-b/family-c"
 `,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			domainAndFamily := args[0]
 			key, err := mgr.CreateSchema(domainAndFamily)
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("Successfully created new schema with key: %s\n\n", key)
+			cmd.Printf("Successfully created new schema with key: %s\n\n", key)
 			s, err := mgr.Registry().GetSchemaByKey(key)
 			if err == nil {
-				fmt.Println("The schema and its test documents can be found here:")
-				fmt.Printf("  %s\n\n", s.Path(schema.HomeDir))
-				fmt.Println("Add JSON documents to the `pass` directory that you expect to PASS validation.")
-				fmt.Println("Add JSON documents to the `fail` directory that you expect to FAIL validation.")
-				fmt.Printf("Then run `jsm validate %s` to test the schema with these documents.\n", key)
+				cmd.Println("The schema and its test documents can be found here:")
+				cmd.Printf("  %s\n\n", s.Path(schema.HomeDir))
+				cmd.Println("Add JSON documents to the `pass` directory that you expect to PASS validation.")
+				cmd.Println("Add JSON documents to the `fail` directory that you expect to FAIL validation.")
+				cmd.Printf("Then run `jsm validate %s` to test the schema with these documents.\n", key)
 			}
 
 			return nil

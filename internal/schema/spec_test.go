@@ -70,6 +70,7 @@ func TestSpec_Run(t *testing.T) {
 
 			if tt.wantErrType != nil {
 				require.Error(t, err)
+				//nolint:testifylint // IsType is appropriate for table-driven tests with interface{}
 				assert.IsType(t, tt.wantErrType, err)
 				assert.Equal(t, err, spec.Err)
 			} else {

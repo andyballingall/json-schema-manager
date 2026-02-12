@@ -1,6 +1,8 @@
+// Package main provides a script to run GoReleaser in snapshot mode.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,16 +11,18 @@ import (
 func main() {
 	_, err := exec.LookPath("goreleaser")
 	if err != nil {
-		fmt.Println("goreleaser not found. Install it with 'make setup' (macOS/Linux) or '.\\win-make.ps1 setup' (Windows)")
+		_, _ = fmt.Println(
+			"goreleaser not found. Install it with 'make setup' (macOS/Linux) or '.\\win-make.ps1 setup' (Windows)",
+		)
 		os.Exit(1)
 	}
 
-	fmt.Println("Running GoReleaser snapshot...")
-	cmd := exec.Command("goreleaser", "release", "--snapshot", "--clean")
+	_, _ = fmt.Println("Running GoReleaser snapshot...")
+	cmd := exec.CommandContext(context.Background(), "goreleaser", "release", "--snapshot", "--clean")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err = cmd.Run(); err != nil {
-		fmt.Printf("❌ Snapshot failed: %v\n", err)
+		_, _ = fmt.Printf("❌ Snapshot failed: %v\n", err)
 		os.Exit(1)
 	}
 }

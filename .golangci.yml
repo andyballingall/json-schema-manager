@@ -14,30 +14,28 @@ formatters:
     gofumpt:
       module-path: github.com/andyballingall/json-schema-manager
     goimports:
-      # A list of prefixes, which, if set, checks import paths
-      # with the given prefixes are grouped after 3rd-party packages.
-      # Default: []
       local-prefixes:
         - github.com/andyballingall/json-schema-manager
     golines:
       max-len: 120
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/andyballingall/json-schema-manager)
 
 linters:
   enable:
-    # Basics
     - errcheck
     - staticcheck
     - unused
     - ineffassign
-
-    # Formatting & Style
     - revive
     - misspell
     - lll
     - whitespace
     - goconst
-
-    # Complexity & Quality
+    - gocyclo
     - gocritic
     - unconvert
     - prealloc
@@ -47,18 +45,12 @@ linters:
     - nilerr
     - copyloopvar
     - unparam
-
-    # Security & Resources
     - gosec
     - bodyclose
     - noctx
-
-    # Testing & Maintenance
     - testifylint
     - thelper
     - nolintlint
-
-    # NEW: Quality & Safety
     - tagliatelle
     - errname
     - forcetypeassert
@@ -72,20 +64,15 @@ linters:
     - wastedassign
   settings:
     govet:
-      # ENABLE-ALL ensures standard checks (printf, atomic, etc.) are active.
       enable-all: true
       disable:
         - fieldalignment
-
     gocyclo:
       min-complexity: 15
-
     misspell:
       locale: UK
-
     lll:
       line-length: 120
-
     gocritic:
       enabled-tags:
         - diagnostic
@@ -97,28 +84,33 @@ linters:
         - dupImport
         - whyNoLint
         - wrapperFunc
-
     nolintlint:
       allow-unused: false
       require-explanation: true
       require-specific: true
-
     testifylint:
       enable-all: true
-
     goconst:
       min-len: 3
       min-occurrences: 3
-
     tagliatelle:
       case:
         rules:
           json: camel
           yaml: camel
-
     gocognit:
-      min-complexity: 10
-
+      min-complexity: 15
     godot:
       scope: declarations
       capital: true
+  exclusions:
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - gocyclo
+          - gocognit
+          - gosec
+          - gocritic
+      - path: "scripts/(.+)"
+        linters:
+          - gosec

@@ -6,7 +6,8 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/config"
 )
 
-func NewCheckChangesCmd(mgr Manager) *cobra.Command {
+// NewCheckChangesCmd creates a new check-changes command.
+func NewCheckChangesCmd(m Manager) *cobra.Command {
 	var env string
 
 	cmd := &cobra.Command{
@@ -22,7 +23,7 @@ mutations in dev environments to allow teams to iterate on a new schema together
 			if len(args) > 0 {
 				env = args[0]
 			}
-			return mgr.CheckChanges(cmd.Context(), config.Env(env))
+			return m.CheckChanges(cmd.Context(), config.Env(env))
 		},
 	}
 

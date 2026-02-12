@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/repo"
 )
 
@@ -41,8 +41,14 @@ type FSDistBuilder struct {
 }
 
 // NewFSDistBuilder creates a new DistBuilder for the given registry and config.
-func NewFSDistBuilder(r *Registry, cfg *config.Config, g repo.Gitter, distDirName string) (DistBuilder, error) {
-	distDir, err := distDirectory(r.pathResolver, r.RootDirectory(), distDirName)
+func NewFSDistBuilder(
+	ctx context.Context,
+	r *Registry,
+	cfg *config.Config,
+	g repo.Gitter,
+	distDirName string,
+) (DistBuilder, error) {
+	distDir, err := distDirectory(ctx, r.pathResolver, r.RootDirectory(), distDirName)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +145,7 @@ func (b *FSDistBuilder) BuildChanged(ctx context.Context, env config.Env, anchor
 		return 0, err
 	}
 
-	changes, err := b.gitter.GetSchemaChanges(anchor, b.registry.RootDirectory(), SchemaSuffix)
+	changes, err := b.gitter.GetSchemaChanges(ctx, anchor, b.registry.RootDirectory(), SchemaSuffix)
 	if err != nil {
 		return 0, err
 	}
@@ -203,7 +209,7 @@ func (b *FSDistBuilder) renderAndWrite(ctx context.Context, env config.Env, k Ke
 // ensureDistDir prepares the distribution directory for the given environment.
 func (b *FSDistBuilder) ensureDistDir(env config.Env) error {
 	// Ensure parent dist directory exists
-	if err := os.MkdirAll(b.distDir, 0o755); err != nil {
+	if err := os.MkdirAll(b.distDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create base dist directory: %w", err)
 	}
 
@@ -216,7 +222,7 @@ func (b *FSDistBuilder) ensureDistDir(env config.Env) error {
 
 	// Recreate environment-specific directory with public/private subdirectories
 	for _, sub := range []string{"public", "private"} {
-		if err := os.MkdirAll(filepath.Join(envDir, sub), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(envDir, sub), 0o750); err != nil {
 			return fmt.Errorf("failed to create environment dist subdirectory %s/%s: %w", env, sub, err)
 		}
 	}
@@ -227,8 +233,12 @@ func (b *FSDistBuilder) ensureDistDir(env config.Env) error {
 // distDirectory finds the directory to use for the distribution artefacts.
 // It returns an error if the registry root is the same as the git root.
 // Otherwise it returns a sibling directory of the registry root.
-func distDirectory(pathResolver fs.PathResolver, registryRoot, distDirName string) (string, error) {
-	cmd := exec.Command("git", "-C", registryRoot, "rev-parse", "--show-toplevel")
+func distDirectory(
+	ctx context.Context,
+	pathResolver fsh.PathResolver,
+	registryRoot, distDirName string,
+) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", registryRoot, "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()
 	if err != nil {
 		// If git fails, we assume we're not in a git repo and just return a sibling

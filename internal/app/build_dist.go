@@ -6,7 +6,8 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/config"
 )
 
-func NewBuildDistCmd(mgr Manager) *cobra.Command {
+// NewBuildDistCmd creates a new build-dist command.
+func NewBuildDistCmd(m Manager) *cobra.Command {
 	var all bool
 
 	cmd := &cobra.Command{
@@ -29,7 +30,10 @@ for local troubleshooting or manual overrides.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			env := args[0]
-			return mgr.BuildDist(cmd.Context(), config.Env(env), all)
+			if err := m.BuildDist(cmd.Context(), config.Env(env), all); err != nil {
+				return err
+			}
+			return nil
 		},
 	}
 

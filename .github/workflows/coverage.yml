@@ -1,0 +1,51 @@
+name: Coverage Badge
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    update-badge:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up Go
+              uses: actions/setup-go@v5
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Generate Badge
+              run: |
+                  make setup
+                  make test-badge
+
+            - name: Update Wiki
+              env:
+                  WIKI_REPO: ${{ github.repository }}.wiki
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  # Clone the wiki repository
+                  git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${WIKI_REPO}.git" wiki
+
+                  # Copy the badge to the wiki
+                  cp coverage.svg wiki/
+
+                  # Commit and push
+                  cd wiki
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+
+                  if git diff --quiet; then
+                    echo "No changes to coverage badge"
+                  else
+                    git add coverage.svg
+                    git commit -m "chore: update coverage badge"
+                    git push
+                  fi

@@ -15,7 +15,11 @@ dist/
 
 # Code coverage profiles and other test artifacts
 *.out
-coverage*
+coverage.out
+coverage.html
+coverage.svg
+/coverage*/
+!/coverage.svg
 *.coverprofile
 profile.cov
 .jsm.log

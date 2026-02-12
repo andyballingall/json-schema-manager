@@ -8,6 +8,7 @@ import (
 // SemVer represents the semantic version of a schema.
 type SemVer [3]uint64
 
+// NewSemVer returns a new SemVer.
 func NewSemVer(major, minor, patch string) (SemVer, error) {
 	vMaj, err := strconv.ParseUint(major, 10, 64)
 	if err != nil || vMaj == 0 {
@@ -27,18 +28,22 @@ func NewSemVer(major, minor, patch string) (SemVer, error) {
 	return SemVer{vMaj, vMin, vPat}, nil
 }
 
+// Major returns the major version.
 func (s SemVer) Major() uint64 {
 	return s[0]
 }
 
+// Minor returns the minor version.
 func (s SemVer) Minor() uint64 {
 	return s[1]
 }
 
+// Patch returns the patch version.
 func (s SemVer) Patch() uint64 {
 	return s[2]
 }
 
+// Set sets the version numbers.
 func (s *SemVer) Set(major, minor, patch uint64) {
 	s[0] = major
 	s[1] = minor

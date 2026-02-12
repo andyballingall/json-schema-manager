@@ -1,3 +1,4 @@
+// Package main provides integration tests for the jsm CLI.
 package main
 
 import (
@@ -42,7 +43,7 @@ func ensureBinary() error {
 		binaryPath = filepath.Join(tmpDir, binaryName)
 
 		// Build the binary from the root of the project
-		cmd := exec.Command("go", "build", "-o", binaryPath, ".")
+		cmd := exec.CommandContext(context.Background(), "go", "build", "-o", binaryPath, ".")
 		if bOutput, bErr := cmd.CombinedOutput(); bErr != nil {
 			errBuild = fmt.Errorf("failed to build binary: %w\nOutput: %s", bErr, string(bOutput))
 		}
@@ -94,7 +95,7 @@ func TestBinary_Help(t *testing.T) {
 		t.Fatal(err)
 	}
 	regDir := setupIntegrationRegistry(t)
-	cmd := exec.Command(binaryPath, "--help")
+	cmd := exec.CommandContext(context.Background(), binaryPath, "--help")
 	cmd.Env = append(os.Environ(), "JSM_REGISTRY_ROOT_DIR="+regDir)
 
 	var stdout, stderr bytes.Buffer
@@ -138,7 +139,7 @@ func TestBinary_Validate(t *testing.T) {
 
 	t.Run("valid schema", func(t *testing.T) {
 		t.Parallel()
-		cmd := exec.Command(binaryPath, "validate", schemaFile)
+		cmd := exec.CommandContext(context.Background(), binaryPath, "validate", schemaFile)
 		cmd.Env = append(os.Environ(), "JSM_REGISTRY_ROOT_DIR="+regDir)
 
 		var stdout, stderr bytes.Buffer
@@ -152,7 +153,7 @@ func TestBinary_Validate(t *testing.T) {
 
 	t.Run("invalid schema command", func(t *testing.T) {
 		t.Parallel()
-		cmd := exec.Command(binaryPath, "validate", "/non/existent/path")
+		cmd := exec.CommandContext(context.Background(), binaryPath, "validate", "/non/existent/path")
 		cmd.Env = append(os.Environ(), "JSM_REGISTRY_ROOT_DIR="+regDir)
 
 		errVal := cmd.Run()

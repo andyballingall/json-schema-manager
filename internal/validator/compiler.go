@@ -1,13 +1,19 @@
+// Package validator provides interfaces and types for JSON Schema validation.
 package validator
 
 // Draft represents a JSON Schema draft version.
 type Draft string
 
 const (
-	Draft4       Draft = "http://json-schema.org/draft-04/schema#"
-	Draft6       Draft = "http://json-schema.org/draft-06/schema#"
-	Draft7       Draft = "http://json-schema.org/draft-07/schema#"
+	// Draft4 represents JSON Schema Draft 4.
+	Draft4 Draft = "http://json-schema.org/draft-04/schema#"
+	// Draft6 represents JSON Schema Draft 6.
+	Draft6 Draft = "http://json-schema.org/draft-06/schema#"
+	// Draft7 represents JSON Schema Draft 7.
+	Draft7 Draft = "http://json-schema.org/draft-07/schema#"
+	// Draft2019_09 represents JSON Schema Draft 2019-09.
 	Draft2019_09 Draft = "https://json-schema.org/draft/2019-09/schema"
+	// Draft2020_12 represents JSON Schema Draft 2020-12.
 	Draft2020_12 Draft = "https://json-schema.org/draft/2020-12/schema"
 )
 

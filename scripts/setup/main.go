@@ -1,6 +1,8 @@
+// Package main provides a script to set up the development environment.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,7 +13,7 @@ import (
 func main() {
 	tools := map[string]string{
 		"lefthook":      "github.com/evilmartians/lefthook@latest",
-		"golangci-lint": "github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.5",
+		"golangci-lint": "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0",
 		"goreleaser":    "github.com/goreleaser/goreleaser/v2@latest",
 		"staticcheck":   "honnef.co/go/tools/cmd/staticcheck@latest",
 		"gotestsum":     "gotest.tools/gotestsum@latest",
@@ -20,22 +22,22 @@ func main() {
 
 	for tool, path := range tools {
 		if !isToolInstalled(tool) {
-			fmt.Printf("📦 Installing %s...\n", tool)
+			_, _ = fmt.Printf("📦 Installing %s...\n", tool)
 			if err := installTool(path); err != nil {
-				fmt.Printf("❌ Failed to install %s: %v\n", tool, err)
+				_, _ = fmt.Printf("❌ Failed to install %s: %v\n", tool, err)
 			} else {
-				fmt.Printf("✅ Installed %s\n", tool)
+				_, _ = fmt.Printf("✅ Installed %s\n", tool)
 			}
 		} else {
-			fmt.Printf("✅ %s is already installed\n", tool)
+			_, _ = fmt.Printf("✅ %s is already installed\n", tool)
 		}
 	}
 
-	fmt.Println("🚀 Installing lefthook hooks...")
+	_, _ = fmt.Println("🚀 Installing lefthook hooks...")
 	if err := runCommand("lefthook", "install"); err != nil {
-		fmt.Printf("❌ Failed to install lefthook hooks: %v\n", err)
+		_, _ = fmt.Printf("❌ Failed to install lefthook hooks: %v\n", err)
 	} else {
-		fmt.Println("✅ Lefthook hooks installed!")
+		_, _ = fmt.Println("✅ Lefthook hooks installed!")
 	}
 }
 
@@ -84,7 +86,7 @@ func runCommand(name string, args ...string) error {
 		}
 	}
 
-	cmd := exec.Command(path, args...)
+	cmd := exec.CommandContext(context.Background(), path, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

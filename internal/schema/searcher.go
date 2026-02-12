@@ -13,6 +13,7 @@ import (
 // SearchSeparator is the separator used to separate the domains, family name, and semantic version in a Searcher spec.
 const SearchSeparator byte = '/'
 
+// SearchSeparatorString is the string representation of SearchSeparator.
 var SearchSeparatorString = string(SearchSeparator)
 
 var validSearchScopeRegex = regexp.MustCompile(`^[a-z0-9-/]+$`)
@@ -28,6 +29,7 @@ var validSearchScopeRegex = regexp.MustCompile(`^[a-z0-9-/]+$`)
 // (Note that there can be 1-n domains. The example above shows a two-level domain.)
 type SearchScope string
 
+// NewSearchScope creates a new SearchScope from a string specification.
 func NewSearchScope(s string) (SearchScope, error) {
 	if !validSearchScopeRegex.MatchString(s) {
 		return "", &InvalidSearchScopeError{spec: s}

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
@@ -40,7 +40,8 @@ func TestNewCreateSchemaVersionCmd(t *testing.T) {
 			name: "Release type as positional argument with -k flag",
 			args: []string{"patch", "-k", "domain_family_1_0_0"},
 			setupMock: func(m *MockManager) {
-				m.On("CreateSchemaVersion", baseKey, schema.ReleaseTypePatch).Return(schema.Key("domain_family_1_0_1"), nil)
+				m.On("CreateSchemaVersion", baseKey, schema.ReleaseTypePatch).
+					Return(schema.Key("domain_family_1_0_1"), nil)
 			},
 			wantOutput: "Successfully created new schema with key: domain_family_1_0_1\n\n",
 		},
@@ -48,7 +49,8 @@ func TestNewCreateSchemaVersionCmd(t *testing.T) {
 			name: "Release type as positional argument with -i flag",
 			args: []string{"major", "-i", "https://p/domain_family_1_0_0.schema.json"},
 			setupMock: func(m *MockManager) {
-				m.On("CreateSchemaVersion", baseKey, schema.ReleaseTypeMajor).Return(schema.Key("domain_family_2_0_0"), nil)
+				m.On("CreateSchemaVersion", baseKey, schema.ReleaseTypeMajor).
+					Return(schema.Key("domain_family_2_0_0"), nil)
 			},
 			wantOutput: "Successfully created new schema with key: domain_family_2_0_0\n\n",
 		},
@@ -89,7 +91,8 @@ func TestNewCreateSchemaVersionCmd(t *testing.T) {
 			name: "Target scope resolves to single schema",
 			args: []string{"domain/family", "major"},
 			setupMock: func(m *MockManager) {
-				m.On("CreateSchemaVersion", baseKey, schema.ReleaseTypeMajor).Return(schema.Key("domain_family_2_0_0"), nil)
+				m.On("CreateSchemaVersion", baseKey, schema.ReleaseTypeMajor).
+					Return(schema.Key("domain_family_2_0_0"), nil)
 			},
 			wantOutput: "Successfully created new schema with key: domain_family_2_0_0\n\n",
 		},
@@ -118,7 +121,7 @@ func TestNewCreateSchemaVersionCmd(t *testing.T) {
 			configPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
 			require.NoError(t, os.WriteFile(configPath, []byte(simpleTestConfig), 0o600))
 
-			reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+			reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{}, fsh.NewPathResolver(), fsh.NewEnvProvider())
 			require.NoError(t, rErr)
 
 			// Create a dummy schema file for resolution to work
@@ -145,6 +148,7 @@ func TestNewCreateSchemaVersionCmd(t *testing.T) {
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.wantErrType != nil {
+					//nolint:testifylint // IsType is appropriate for table-driven tests with interface{}
 					assert.IsType(t, tt.wantErrType, err)
 				}
 				return

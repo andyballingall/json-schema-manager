@@ -18,7 +18,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
@@ -119,6 +119,7 @@ func TestNewReleaseType(t *testing.T) {
 			got, err := NewReleaseType(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
+				//nolint:testifylint // IsType is appropriate for table-driven tests with interface{}
 				assert.IsType(t, &InvalidReleaseTypeError{}, err)
 				return
 			}
@@ -135,7 +136,7 @@ func createRegistry(t *testing.T, tmpDir, cfgData string) *Registry {
 		t.Fatalf("failed to write registry config file: %v", err)
 	}
 	compiler := &mockCompiler{}
-	r, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
+	r, err := NewRegistry(tmpDir, compiler, fsh.NewPathResolver(), fsh.NewEnvProvider())
 	if err != nil {
 		t.Fatalf("failed to create registry: %v", err)
 	}
@@ -270,7 +271,7 @@ environments:
 	}
 }
 
-func TestRendered(t *testing.T) { //nolint:gocognit // high complexity test
+func TestRendered(t *testing.T) {
 	t.Parallel()
 
 	const loadKey = Key("domain_family_1_0_0") // The key we pass to the load function
@@ -724,12 +725,16 @@ environments:
 			}
 
 			// NewRegistry requires a config file.
-			if err := os.WriteFile(filepath.Join(tmpDir, config.JsmRegistryConfigFile), []byte(configData), 0o600); err != nil {
+			if err := os.WriteFile(
+				filepath.Join(tmpDir, config.JsmRegistryConfigFile),
+				[]byte(configData),
+				0o600,
+			); err != nil {
 				t.Fatal(err)
 			}
 
 			compiler := &mockCompiler{}
-			registry, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
+			registry, err := NewRegistry(tmpDir, compiler, fsh.NewPathResolver(), fsh.NewEnvProvider())
 			require.NoError(t, err)
 
 			// Construct a schema with necessary fields
@@ -1520,12 +1525,16 @@ environments:
 			}
 
 			// NewRegistry requires a config file.
-			if err := os.WriteFile(filepath.Join(tmpDir, config.JsmRegistryConfigFile), []byte(configData), 0o600); err != nil {
+			if err := os.WriteFile(
+				filepath.Join(tmpDir, config.JsmRegistryConfigFile),
+				[]byte(configData),
+				0o600,
+			); err != nil {
 				t.Fatal(err)
 			}
 
 			compiler := &mockCompiler{}
-			registry, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
+			registry, err := NewRegistry(tmpDir, compiler, fsh.NewPathResolver(), fsh.NewEnvProvider())
 			require.NoError(t, err)
 
 			// Construct a schema with necessary fields
@@ -1697,12 +1706,16 @@ environments:
 			}
 
 			// NewRegistry requires a config file.
-			if err := os.WriteFile(filepath.Join(tmpDir, config.JsmRegistryConfigFile), []byte(configData), 0o600); err != nil {
+			if err := os.WriteFile(
+				filepath.Join(tmpDir, config.JsmRegistryConfigFile),
+				[]byte(configData),
+				0o600,
+			); err != nil {
 				t.Fatal(err)
 			}
 
 			compiler := &mockCompiler{}
-			registry, err := NewRegistry(tmpDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
+			registry, err := NewRegistry(tmpDir, compiler, fsh.NewPathResolver(), fsh.NewEnvProvider())
 			require.NoError(t, err)
 
 			// Construct a schema with necessary fields
@@ -1848,5 +1861,5 @@ func TestTestDocuments_InvalidJSONFile(t *testing.T) {
 
 	_, err := s.TestDocuments(TestDocTypePass)
 	require.Error(t, err)
-	assert.IsType(t, InvalidTestDocumentError{}, err)
+	assert.ErrorAs(t, err, new(InvalidTestDocumentError))
 }

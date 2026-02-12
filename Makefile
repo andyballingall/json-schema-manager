@@ -1,4 +1,4 @@
-.PHONY: all build run clean test test-race test-cover check-coverage cover-html lint fmt snapshot release-check setup
+.PHONY: all build run clean test test-race test-cover test-race-coverage cover-html lint fmt snapshot release-check setup
 
 all: build
 
@@ -27,13 +27,14 @@ test:
 test-race:
 	@go run scripts/tester/main.go -race -count=1 ./... -v
 
-# Run tests with coverage and show summary
+# Run tests with coverage and show summary. Note that for CI and pre-commit, use test-race-coverage instead
+# As this amalgamates the project-wide coverage across packages.
 test-cover:
 	@go run scripts/tester/main.go --summary -count=1 -race ./...
 
-# Check that all files in internal, except explicit exclusions, have 100% coverage
-check-coverage:
-	@go run scripts/tester/main.go --check-coverage -count=1 -race ./...
+# The quality gate for CI and pre-commit - combines test-race and project-wide test coverage
+test-race-coverage:
+	@go run scripts/tester/main.go --test-race-coverage -count=1 -race ./...
 
 # View coverage in browser
 cover-html:

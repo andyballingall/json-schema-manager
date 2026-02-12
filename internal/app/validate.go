@@ -8,7 +8,8 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
-func NewValidateCmd(mgr Manager) *cobra.Command {
+// NewValidateCmd creates a new validate command.
+func NewValidateCmd(m Manager) *cobra.Command {
 	var verbose bool
 	var continueOnError bool
 	var skipCompatible bool
@@ -70,7 +71,7 @@ ALL SCHEMAS
 			arg = args[0]
 		}
 
-		resolver := schema.NewTargetResolver(mgr.Registry(), arg)
+		resolver := schema.NewTargetResolver(m.Registry(), arg)
 		if keyStr != "" {
 			resolver.SetKey(schema.Key(keyStr))
 		}
@@ -88,18 +89,18 @@ ALL SCHEMAS
 
 		target, err := resolver.Resolve()
 		if err != nil {
-			return &schema.InvalidTargetArgumentError{Arg: arg}
+			return err
 		}
 
 		noColour, _ := cmd.Flags().GetBool("nocolour")
 		useColour := !noColour
 
 		if watch {
-			return mgr.WatchValidation(cmd.Context(), target, verbose, string(outputVal),
+			return m.WatchValidation(cmd.Context(), target, verbose, string(outputVal),
 				useColour, continueOnError, testScope, skipCompatible, nil)
 		}
 
-		return mgr.ValidateSchema(cmd.Context(), target, verbose, string(outputVal),
+		return m.ValidateSchema(cmd.Context(), target, verbose, string(outputVal),
 			useColour, continueOnError, testScope, skipCompatible)
 	}
 

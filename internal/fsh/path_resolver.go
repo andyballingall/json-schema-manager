@@ -1,4 +1,4 @@
-package fs
+package fsh
 
 import (
 	"path/filepath"
@@ -30,11 +30,7 @@ func (r *StandardPathResolver) CanonicalPath(path string) (string, error) {
 		return "", err
 	}
 
-	cp, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", err
-	}
-	return cp, nil
+	return filepath.EvalSymlinks(abs)
 }
 
 // Abs returns the absolute path.

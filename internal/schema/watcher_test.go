@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 type mockEventWatcher struct {
@@ -176,7 +176,7 @@ func TestWatcher(t *testing.T) {
 		w := NewWatcher(r, logger)
 		fw, _ := fsnotify.NewWatcher()
 		watcher := &eventWatcherWrapper{fw}
-		defer watcher.Close()
+		defer func() { _ = watcher.Close() }()
 
 		newDir := filepath.Join(r.RootDirectory(), "newdir")
 		require.NoError(t, os.Mkdir(newDir, 0o755))
@@ -194,7 +194,7 @@ func TestWatcher(t *testing.T) {
 		w := NewWatcher(r, logger)
 		fw, _ := fsnotify.NewWatcher()
 		watcher := &eventWatcherWrapper{fw}
-		defer watcher.Close()
+		defer func() { _ = watcher.Close() }()
 
 		hiddenDir := filepath.Join(r.RootDirectory(), ".hidden")
 		require.NoError(t, os.Mkdir(hiddenDir, 0o755))
@@ -336,6 +336,7 @@ func TestWatcher(t *testing.T) {
 
 		// To test handleEvent in isolation safely:
 		t.Run("handleEvent isolation", func(t *testing.T) {
+			t.Parallel()
 			subWatcher := &mockEventWatcher{}
 
 			// Stat error
@@ -360,14 +361,14 @@ func TestWatcher(t *testing.T) {
 		fw, err := fsnotify.NewWatcher()
 		require.NoError(t, err)
 		iw := &eventWatcherWrapper{fw}
-		defer iw.Close()
+		defer func() { _ = iw.Close() }()
 
 		// 1. Walk error (line 113)
 		err = w.addRecursive(iw, "/non-existent-root")
 		require.Error(t, err)
 
 		// 2. Watcher Add error (line 120)
-		iw.Close() // Close it to make Add fail
+		_ = iw.Close() // Close it to make Add fail
 		err = w.addRecursive(iw, r.RootDirectory())
 		require.Error(t, err)
 	})
@@ -403,8 +404,11 @@ func TestWatcher(t *testing.T) {
 		// 2. addRecursive error (line 52)
 		w.newWatcher = defaultWatcherFactory // reset
 		tmp := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(tmp, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600))
-		reg, _ := NewRegistry(tmp, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+		require.NoError(
+			t,
+			os.WriteFile(filepath.Join(tmp, "json-schema-manager-config.yml"), []byte(testConfigData), 0o600),
+		)
+		reg, _ := NewRegistry(tmp, &mockCompiler{}, fsh.NewPathResolver(), fsh.NewEnvProvider())
 		w = NewWatcher(reg, logger)
 		require.NoError(t, os.RemoveAll(tmp)) // Make root non-existent
 		err = w.Watch(context.Background(), nil)

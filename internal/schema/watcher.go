@@ -77,7 +77,7 @@ func (w *Watcher) Watch(ctx context.Context, callback func(WatchEvent)) error {
 	if err != nil {
 		return err
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	if err := w.addRecursive(watcher, w.registry.RootDirectory()); err != nil {
 		return err
@@ -88,6 +88,10 @@ func (w *Watcher) Watch(ctx context.Context, callback func(WatchEvent)) error {
 		close(w.Ready)
 	}
 
+	return w.eventLoop(ctx, watcher, callback)
+}
+
+func (w *Watcher) eventLoop(ctx context.Context, watcher eventWatcher, callback func(WatchEvent)) error {
 	var timer *time.Timer
 	const debounceDuration = 100 * time.Millisecond
 

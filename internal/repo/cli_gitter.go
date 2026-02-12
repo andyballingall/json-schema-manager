@@ -1,7 +1,9 @@
+// Package repo provides git repository integration for JSM.
 package repo
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -9,19 +11,19 @@ import (
 	"time"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 // CLIGitter is the concrete implementation of Gitter using the git CLI.
 type CLIGitter struct {
 	cfg          *config.Config
-	pathResolver fs.PathResolver
+	pathResolver fsh.PathResolver
 	repoRoot     string
 	gitBinary    string
 }
 
 // NewCLIGitter creates a new CLIGitter instance.
-func NewCLIGitter(cfg *config.Config, pathResolver fs.PathResolver, repoRoot string) *CLIGitter {
+func NewCLIGitter(cfg *config.Config, pathResolver fsh.PathResolver, repoRoot string) *CLIGitter {
 	return &CLIGitter{
 		cfg:          cfg,
 		pathResolver: pathResolver,
@@ -47,7 +49,7 @@ func (g *CLIGitter) tagPrefix(env config.Env) string {
 
 // GetLatestAnchor finds the latest deployment tag for an environment.
 // If no tag is found, it returns the repository's initial commit.
-func (g *CLIGitter) GetLatestAnchor(env config.Env) (Revision, error) {
+func (g *CLIGitter) GetLatestAnchor(ctx context.Context, env config.Env) (Revision, error) {
 	if _, err := g.getEnvConfig(env); err != nil {
 		return "", err
 	}
@@ -56,7 +58,7 @@ func (g *CLIGitter) GetLatestAnchor(env config.Env) (Revision, error) {
 
 	// --abbrev=0 finds the closest reachable tag matching the pattern
 	//nolint:gosec // CMD arguments are internal
-	cmd := exec.Command(g.gitBinary, "describe", "--tags", "--match", tagPattern, "--abbrev=0")
+	cmd := exec.CommandContext(ctx, g.gitBinary, "describe", "--tags", "--match", tagPattern, "--abbrev=0")
 	cmd.Dir = g.repoRoot
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -64,7 +66,7 @@ func (g *CLIGitter) GetLatestAnchor(env config.Env) (Revision, error) {
 	if err := cmd.Run(); err != nil {
 		// Fallback: Get the root commit (Day Zero)
 		//nolint:gosec // CMD arguments are internal
-		revCmd := exec.Command(g.gitBinary, "rev-list", "--max-parents=0", "HEAD")
+		revCmd := exec.CommandContext(ctx, g.gitBinary, "rev-list", "--max-parents=0", "HEAD")
 		revCmd.Dir = g.repoRoot
 		revOut, rErr := revCmd.Output()
 		if rErr != nil {
@@ -77,9 +79,9 @@ func (g *CLIGitter) GetLatestAnchor(env config.Env) (Revision, error) {
 }
 
 // getGitRoot finds the top-level directory of the git repository.
-func (g *CLIGitter) getGitRoot() (string, error) {
+func (g *CLIGitter) getGitRoot(ctx context.Context) (string, error) {
 	//nolint:gosec // CMD arguments are internal
-	cmd := exec.Command(g.gitBinary, "rev-parse", "--show-toplevel")
+	cmd := exec.CommandContext(ctx, g.gitBinary, "rev-parse", "--show-toplevel")
 	cmd.Dir = g.repoRoot
 	out, err := cmd.Output()
 	if err != nil {
@@ -89,7 +91,7 @@ func (g *CLIGitter) getGitRoot() (string, error) {
 }
 
 // TagDeploymentSuccess creates and pushes a new environment-specific deployment tag.
-func (g *CLIGitter) TagDeploymentSuccess(env config.Env) (string, error) {
+func (g *CLIGitter) TagDeploymentSuccess(ctx context.Context, env config.Env) (string, error) {
 	if _, err := g.getEnvConfig(env); err != nil {
 		return "", err
 	}
@@ -99,7 +101,15 @@ func (g *CLIGitter) TagDeploymentSuccess(env config.Env) (string, error) {
 
 	// 1. Create the local annotated tag
 	//nolint:gosec // CMD arguments are internal
-	tagCmd := exec.Command(g.gitBinary, "tag", "-a", tagName, "-m", fmt.Sprintf("Successful JSM deployment to %s", env))
+	tagCmd := exec.CommandContext(
+		ctx,
+		g.gitBinary,
+		"tag",
+		"-a",
+		tagName,
+		"-m",
+		fmt.Sprintf("Successful JSM deployment to %s", env),
+	)
 	tagCmd.Dir = g.repoRoot
 	if err := tagCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to create git tag: %w", err)
@@ -107,7 +117,7 @@ func (g *CLIGitter) TagDeploymentSuccess(env config.Env) (string, error) {
 
 	// 2. Push the tag to origin
 	//nolint:gosec // CMD arguments are internal
-	pushCmd := exec.Command(g.gitBinary, "push", "origin", tagName)
+	pushCmd := exec.CommandContext(ctx, g.gitBinary, "push", "origin", tagName)
 	pushCmd.Dir = g.repoRoot
 	if err := pushCmd.Run(); err != nil {
 		return tagName, fmt.Errorf("failed to push git tag to origin: %w", err)
@@ -117,7 +127,7 @@ func (g *CLIGitter) TagDeploymentSuccess(env config.Env) (string, error) {
 }
 
 // GetSchemaChanges identifies files with the given suffix changed between the anchor and HEAD.
-func (g *CLIGitter) GetSchemaChanges(anchor Revision, sourceDir, suffix string) ([]Change, error) {
+func (g *CLIGitter) GetSchemaChanges(ctx context.Context, anchor Revision, sourceDir, suffix string) ([]Change, error) {
 	if !filepath.IsAbs(sourceDir) {
 		sourceDir = filepath.Join(g.repoRoot, sourceDir)
 	}
@@ -126,13 +136,13 @@ func (g *CLIGitter) GetSchemaChanges(anchor Revision, sourceDir, suffix string) 
 		return nil, err
 	}
 
-	root, err := g.getGitRoot()
+	root, err := g.getGitRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	//nolint:gosec // CMD arguments are internal and path is absolute
-	cmd := exec.Command(g.gitBinary, "diff", "--name-status", anchor.String(), "--", absSourceDir)
+	cmd := exec.CommandContext(ctx, g.gitBinary, "diff", "--name-status", anchor.String(), "--", absSourceDir)
 	cmd.Dir = g.repoRoot
 	out, err := cmd.CombinedOutput()
 	if err != nil {

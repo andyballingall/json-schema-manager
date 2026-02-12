@@ -1,13 +1,14 @@
 name: CI
 
-permissions:
-    contents: read
-
 on:
     push:
         branches: [main]
     pull_request:
         branches: [main]
+    workflow_dispatch:
+
+permissions:
+    contents: read
 
 # Prevents multiple runs from the same PR overlapping
 concurrency:
@@ -25,7 +26,7 @@ jobs:
             - name: Set up Go
               uses: actions/setup-go@v5
               with:
-                  go-version: "1.25"
+                  go-version-file: go.mod
                   cache: true
 
             - name: Install dependencies
@@ -36,13 +37,8 @@ jobs:
             - name: Run Linter
               run: make lint
 
-            - name: Run Race Tests
-              run: make test-race
-
-            - name: Check Coverage
-              run: make check-coverage
+            - name: Run Tests and Check Coverage
+              run: make test-race-coverage
 
             - name: Run govulncheck
               uses: golang/govulncheck-action@v1
-              with:
-                  go-version-file: go.mod

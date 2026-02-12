@@ -150,7 +150,9 @@ func TestErrors(t *testing.T) {
 				SchemaPath:  "/schema.json",
 				TestDocPath: "/test.json",
 			},
-			contains: []string{"Fail Test document /test.json did not fail validation as expected for schema /schema.json"},
+			contains: []string{
+				"Fail Test document /test.json did not fail validation as expected for schema /schema.json",
+			},
 		},
 		{
 			name: "PassTestFailedError",

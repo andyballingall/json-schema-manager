@@ -31,6 +31,7 @@ type TestInfo struct {
 
 // NewTestInfo attempts to read in and parse a test JSON document.
 func NewTestInfo(filePath string) (TestInfo, error) {
+	//nolint:gosec // Path is constructed from internal registry logic
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return TestInfo{}, CannotReadTestDocumentError{Path: filePath}

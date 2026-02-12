@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 const (
-	LogFile   = ".jsm.log"
+	// LogFile is the default name of the log file.
+	LogFile = ".jsm.log"
+	// LogEnvVar is the name of the environment variable used to override the log file path.
 	LogEnvVar = "JSM_LOG_FILE"
 )
 
@@ -23,7 +25,7 @@ func setupLogger(
 	logLevel *slog.LevelVar,
 	rd string,
 	wd string,
-	envProvider fs.EnvProvider,
+	envProvider fsh.EnvProvider,
 ) (*slog.Logger, io.Closer, error) {
 	// 1. Determine log file path
 	logPath := envProvider.Get(LogEnvVar)
@@ -40,7 +42,8 @@ func setupLogger(
 	}
 
 	// 2. Open log file
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	//nolint:gosec // Path is constructed from internal registry logic
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	var logCloser io.Closer
 	var fileHandler slog.Handler
 
@@ -84,6 +87,9 @@ func (m *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
+// Handle implements the slog.Handler interface.
+//
+//nolint:gocritic // record is heavy but interface requires value
 func (m *multiHandler) Handle(ctx context.Context, record slog.Record) error {
 	for _, h := range m.handlers {
 		if h.Enabled(ctx, record.Level) {
@@ -121,15 +127,18 @@ func (c *consoleHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= c.level.Level()
 }
 
+// Handle implements the slog.Handler interface.
+//
+//nolint:gocritic // record is heavy but interface requires value
 func (c *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 	// Clean output for the console
 	switch {
 	case record.Level >= slog.LevelError:
-		fmt.Fprintf(c.w, "Error: %s", record.Message)
+		_, _ = fmt.Fprintf(c.w, "Error: %s", record.Message)
 	case record.Level >= slog.LevelWarn:
-		fmt.Fprintf(c.w, "Warning: %s", record.Message)
+		_, _ = fmt.Fprintf(c.w, "Warning: %s", record.Message)
 	default:
-		fmt.Fprint(c.w, record.Message)
+		_, _ = fmt.Fprint(c.w, record.Message)
 	}
 
 	// Show attributes added via WithAttrs
@@ -143,15 +152,15 @@ func (c *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 		return true
 	})
 
-	fmt.Fprintln(c.w)
+	_, _ = fmt.Fprintln(c.w)
 	return nil
 }
 
 func (c *consoleHandler) formatAttr(a slog.Attr) {
 	if a.Key == "error" || a.Key == "err" {
-		fmt.Fprintf(c.w, ": %v", a.Value)
+		_, _ = fmt.Fprintf(c.w, ": %v", a.Value)
 	} else {
-		fmt.Fprintf(c.w, " %s=%v", a.Key, a.Value)
+		_, _ = fmt.Fprintf(c.w, " %s=%v", a.Key, a.Value)
 	}
 }
 

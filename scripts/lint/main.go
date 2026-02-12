@@ -1,6 +1,8 @@
+// Package main provides a script to run golangci-lint.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,7 +17,7 @@ func main() {
 	}
 
 	fmt.Println("Linting with golangci-lint...")
-	cmd := exec.Command("golangci-lint", "run")
+	cmd := exec.CommandContext(context.Background(), "golangci-lint", "run")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err = cmd.Run(); err != nil {

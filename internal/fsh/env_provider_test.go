@@ -1,9 +1,11 @@
-package fs
+package fsh_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 // mockEnvProvider is a test implementation of EnvProvider.
@@ -23,7 +25,7 @@ func TestOSEnvProvider(t *testing.T) {
 
 	t.Run("Get returns environment variable", func(t *testing.T) {
 		t.Parallel()
-		provider := NewEnvProvider()
+		provider := fsh.NewEnvProvider()
 
 		// PATH should always be set
 		path := provider.Get("PATH")
@@ -32,7 +34,7 @@ func TestOSEnvProvider(t *testing.T) {
 
 	t.Run("Get returns empty for unset variable", func(t *testing.T) {
 		t.Parallel()
-		provider := NewEnvProvider()
+		provider := fsh.NewEnvProvider()
 
 		value := provider.Get("UNLIKELY_TO_BE_SET_12345")
 		assert.Empty(t, value)

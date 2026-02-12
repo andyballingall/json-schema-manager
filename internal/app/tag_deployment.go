@@ -6,6 +6,7 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/config"
 )
 
+// NewTagDeploymentCmd returns a new cobra command for tagging a deployment.
 func NewTagDeploymentCmd(mgr Manager) *cobra.Command {
 	var env string
 

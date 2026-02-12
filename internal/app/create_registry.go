@@ -9,11 +9,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
-func NewCreateRegistryCmd(pathResolver fs.PathResolver) *cobra.Command {
+// NewCreateRegistryCmd returns a new cobra command for creating a registry.
+func NewCreateRegistryCmd(pathResolver fsh.PathResolver) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   CreateRegistryCmdName + " [dirpath]",
 		Short: "Create a new JSON schema registry",
@@ -22,11 +23,11 @@ func NewCreateRegistryCmd(pathResolver fs.PathResolver) *cobra.Command {
 		Example: `
 jsm create-registry ./my-registry
 `,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			dirpath := args[0]
 
 			// 1. Create directory if it doesn't exist
-			if err := os.MkdirAll(dirpath, 0o755); err != nil {
+			if err := os.MkdirAll(dirpath, 0o750); err != nil {
 				return fmt.Errorf("failed to create directory: %w", err)
 			}
 
@@ -42,10 +43,10 @@ jsm create-registry ./my-registry
 				return fmt.Errorf("failed to write configuration file: %w", err)
 			}
 
-			fmt.Printf("Successfully created new registry at: %s\n", dirpath)
-			fmt.Printf("%s", addEnvironmentVariableInstructions(pathResolver, dirpath))
-			fmt.Println("\nTo create your first schema, use: the create-schema command. For details:")
-			fmt.Printf("  jsm create-schema -h\n")
+			cmd.Printf("Successfully created new registry at: %s\n", dirpath)
+			cmd.Printf("%s", addEnvironmentVariableInstructions(pathResolver, dirpath))
+			cmd.Println("\nTo create your first schema, use: the create-schema command. For details:")
+			cmd.Printf("  jsm create-schema -h\n")
 
 			return nil
 		},
@@ -54,11 +55,11 @@ jsm create-registry ./my-registry
 	return cmd
 }
 
-func addEnvironmentVariableInstructions(pathResolver fs.PathResolver, dirpath string) string {
+func addEnvironmentVariableInstructions(pathResolver fsh.PathResolver, dirpath string) string {
 	return addEnvironmentVariableInstructionsForOS(pathResolver, dirpath, runtime.GOOS)
 }
 
-func addEnvironmentVariableInstructionsForOS(pathResolver fs.PathResolver, dirpath, goos string) string {
+func addEnvironmentVariableInstructionsForOS(pathResolver fsh.PathResolver, dirpath, goos string) string {
 	abs, err := pathResolver.Abs(dirpath)
 	if err != nil {
 		abs = dirpath

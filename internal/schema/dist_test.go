@@ -14,35 +14,39 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/repo"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
 // mockGitter is a test mock for the repo.Gitter interface.
 type mockGitter struct {
-	getLatestAnchorFunc  func(env config.Env) (repo.Revision, error)
-	tagDeploymentFunc    func(env config.Env) (string, error)
-	getSchemaChangesFunc func(anchor repo.Revision, sourceDir, suffix string) ([]repo.Change, error)
+	getLatestAnchorFunc  func(ctx context.Context, env config.Env) (repo.Revision, error)
+	tagDeploymentFunc    func(ctx context.Context, env config.Env) (string, error)
+	getSchemaChangesFunc func(ctx context.Context, anchor repo.Revision, sourceDir, suffix string) ([]repo.Change, error)
 }
 
-func (m *mockGitter) GetLatestAnchor(env config.Env) (repo.Revision, error) {
+func (m *mockGitter) GetLatestAnchor(ctx context.Context, env config.Env) (repo.Revision, error) {
 	if m.getLatestAnchorFunc != nil {
-		return m.getLatestAnchorFunc(env)
+		return m.getLatestAnchorFunc(ctx, env)
 	}
 	return "HEAD", nil
 }
 
-func (m *mockGitter) TagDeploymentSuccess(env config.Env) (string, error) {
+func (m *mockGitter) TagDeploymentSuccess(ctx context.Context, env config.Env) (string, error) {
 	if m.tagDeploymentFunc != nil {
-		return m.tagDeploymentFunc(env)
+		return m.tagDeploymentFunc(ctx, env)
 	}
 	return "jsm-deploy/prod/20260130-120000", nil
 }
 
-func (m *mockGitter) GetSchemaChanges(anchor repo.Revision, sourceDir, suffix string) ([]repo.Change, error) {
+func (m *mockGitter) GetSchemaChanges(
+	ctx context.Context,
+	anchor repo.Revision,
+	sourceDir, suffix string,
+) ([]repo.Change, error) {
 	if m.getSchemaChangesFunc != nil {
-		return m.getSchemaChangesFunc(anchor, sourceDir, suffix)
+		return m.getSchemaChangesFunc(ctx, anchor, sourceDir, suffix)
 	}
 	return nil, nil
 }
@@ -57,7 +61,7 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		cfg, err := reg.Config()
 		require.NoError(t, err)
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 
 		count, err := builder.BuildAll(context.Background(), "production")
@@ -85,7 +89,7 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		cfg, err := reg.Config()
 		require.NoError(t, err)
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -99,18 +103,18 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		// Init git in reg dir
-		require.NoError(t, exec.Command("git", "-C", dir, "init").Run())
+		require.NoError(t, exec.CommandContext(context.Background(), "git", "-C", dir, "init").Run())
 
 		// Create a config file so NewRegistry succeeds
 		cfgData := `environments: {prod: {publicUrlRoot: 'https://p', privateUrlRoot: 'https://pr', isProduction: true}}`
 		require.NoError(t, os.WriteFile(filepath.Join(dir, config.JsmRegistryConfigFile), []byte(cfgData), 0o600))
 
-		reg, err := NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+		reg, err := NewRegistry(dir, &mockCompiler{}, fsh.NewPathResolver(), fsh.NewEnvProvider())
 		require.NoError(t, err)
 		cfg, _ := reg.Config()
 		gitter := &mockGitter{}
 
-		_, err = NewFSDistBuilder(reg, cfg, gitter, "dist")
+		_, err = NewFSDistBuilder(context.Background(), reg, cfg, gitter, "dist")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot be the same as the git root")
 	})
@@ -127,7 +131,7 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		require.NoError(t, os.Chmod(parentDir, 0o555))
 		defer func() { _ = os.Chmod(parentDir, 0o755) }()
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 
 		_, err = builder.BuildAll(context.Background(), "production")
@@ -141,7 +145,7 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		cfg, err := reg.Config()
 		require.NoError(t, err)
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 
 		// Delete the registry root to make NewSearcher fail
@@ -164,7 +168,7 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 			createSchemaFiles(t, reg, schemaMap{k: `{"type": "object"}`})
 		}
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 		builder.SetNumWorkers(1)
 
@@ -216,7 +220,7 @@ func TestDistBuilder_BuildAll(t *testing.T) {
 		require.NoError(t, os.MkdirAll(badDir, 0o000))
 		defer func() { _ = os.Chmod(badDir, 0o755) }()
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 
 		_, err = builder.BuildAll(context.Background(), "production")
@@ -362,13 +366,13 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 		schemaPath := filepath.Join("domain", "test", "1", "0", "0", "domain_test_1_0_0.schema.json")
 		distDir := filepath.Join(filepath.Dir(reg.RootDirectory()), "dist")
 		gitter := &mockGitter{
-			getSchemaChangesFunc: func(_ repo.Revision, _, _ string) ([]repo.Change, error) {
+			getSchemaChangesFunc: func(_ context.Context, _ repo.Revision, _, _ string) ([]repo.Change, error) {
 				return []repo.Change{
 					{Path: filepath.Join(reg.rootDirectory, schemaPath), IsNew: false},
 				}, nil
 			},
 		}
-		builder, err := NewFSDistBuilder(reg, cfg, gitter, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, gitter, "dist")
 		require.NoError(t, err)
 
 		count, err := builder.BuildChanged(context.Background(), "production", repo.Revision("HEAD"))
@@ -390,11 +394,11 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 		require.NoError(t, err)
 
 		gitter := &mockGitter{
-			getSchemaChangesFunc: func(_ repo.Revision, _, _ string) ([]repo.Change, error) {
+			getSchemaChangesFunc: func(_ context.Context, _ repo.Revision, _, _ string) ([]repo.Change, error) {
 				return []repo.Change{}, nil
 			},
 		}
-		builder, err := NewFSDistBuilder(reg, cfg, gitter, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, gitter, "dist")
 		require.NoError(t, err)
 
 		count, err := builder.BuildChanged(context.Background(), "production", repo.Revision("HEAD"))
@@ -410,11 +414,11 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 		require.NoError(t, err)
 
 		gitter := &mockGitter{
-			getSchemaChangesFunc: func(_ repo.Revision, _, _ string) ([]repo.Change, error) {
+			getSchemaChangesFunc: func(_ context.Context, _ repo.Revision, _, _ string) ([]repo.Change, error) {
 				return nil, errors.New("git failed")
 			},
 		}
-		builder, err := NewFSDistBuilder(reg, cfg, gitter, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, gitter, "dist")
 		require.NoError(t, err)
 
 		_, err = builder.BuildChanged(context.Background(), "production", repo.Revision("HEAD"))
@@ -431,14 +435,14 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 
 		schemaPath := filepath.Join("domain", "test", "1", "0", "0", "domain_test_1_0_0.schema.json")
 		gitter := &mockGitter{
-			getSchemaChangesFunc: func(_ repo.Revision, _, _ string) ([]repo.Change, error) {
+			getSchemaChangesFunc: func(_ context.Context, _ repo.Revision, _, _ string) ([]repo.Change, error) {
 				return []repo.Change{
 					{Path: "invalid/path.schema.json", IsNew: false},
 					{Path: filepath.Join(reg.rootDirectory, schemaPath), IsNew: false},
 				}, nil
 			},
 		}
-		builder, err := NewFSDistBuilder(reg, cfg, gitter, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, gitter, "dist")
 		require.NoError(t, err)
 
 		count, err := builder.BuildChanged(context.Background(), "production", repo.Revision("HEAD"))
@@ -465,11 +469,11 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 		}
 
 		gitter := &mockGitter{
-			getSchemaChangesFunc: func(_ repo.Revision, _, _ string) ([]repo.Change, error) {
+			getSchemaChangesFunc: func(_ context.Context, _ repo.Revision, _, _ string) ([]repo.Change, error) {
 				return changes, nil
 			},
 		}
-		builder, err := NewFSDistBuilder(reg, cfg, gitter, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, gitter, "dist")
 		require.NoError(t, err)
 		builder.SetNumWorkers(1)
 
@@ -495,13 +499,13 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 
 		schemaPath := filepath.Join("domain", "test", "1", "0", "0", "domain_test_1_0_0.schema.json")
 		gitter := &mockGitter{
-			getSchemaChangesFunc: func(_ repo.Revision, _, _ string) ([]repo.Change, error) {
+			getSchemaChangesFunc: func(_ context.Context, _ repo.Revision, _, _ string) ([]repo.Change, error) {
 				return []repo.Change{
 					{Path: filepath.Join(reg.rootDirectory, schemaPath), IsNew: false},
 				}, nil
 			},
 		}
-		builder, err := NewFSDistBuilder(reg, cfg, gitter, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, gitter, "dist")
 		require.NoError(t, err)
 		builder.SetNumWorkers(1)
 
@@ -528,7 +532,7 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 		require.NoError(t, os.Chmod(parentDir, 0o555))
 		defer func() { _ = os.Chmod(parentDir, 0o755) }()
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 
 		_, err = builder.BuildChanged(context.Background(), "production", repo.Revision("HEAD"))
@@ -570,13 +574,13 @@ environments:
 			},
 		}
 
-		reg, err := NewRegistry(regDir, compiler, fs.NewPathResolver(), fs.NewEnvProvider())
+		reg, err := NewRegistry(regDir, compiler, fsh.NewPathResolver(), fsh.NewEnvProvider())
 		require.NoError(t, err)
 
 		cfg, err := reg.Config()
 		require.NoError(t, err)
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 		builder.SetNumWorkers(1)
 
@@ -603,7 +607,7 @@ environments:
 			require.NoError(t, os.WriteFile(filepath.Join(schemaDir, filename), []byte(`{"type": "object"}`), 0o600))
 		}
 
-		builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+		builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 		require.NoError(t, err)
 		builder.SetNumWorkers(1)
 
@@ -737,14 +741,14 @@ func TestDistDirectory(t *testing.T) {
 		gitRoot, _ = filepath.EvalSymlinks(gitRoot)
 
 		// Init git
-		cmd := exec.Command("git", "-C", gitRoot, "init")
+		cmd := exec.CommandContext(context.Background(), "git", "-C", gitRoot, "init")
 		require.NoError(t, cmd.Run())
 
 		regRoot := filepath.Join(gitRoot, "schemas")
 		require.NoError(t, os.MkdirAll(regRoot, 0o755))
 
-		pathResolver := fs.NewPathResolver()
-		dist, err := distDirectory(pathResolver, regRoot, "dist")
+		pathResolver := fsh.NewPathResolver()
+		dist, err := distDirectory(context.Background(), pathResolver, regRoot, "dist")
 		require.NoError(t, err)
 
 		expected := filepath.Join(gitRoot, "dist")
@@ -759,11 +763,11 @@ func TestDistDirectory(t *testing.T) {
 		gitRoot, _ = filepath.EvalSymlinks(gitRoot)
 
 		// Init git
-		cmd := exec.Command("git", "-C", gitRoot, "init")
+		cmd := exec.CommandContext(context.Background(), "git", "-C", gitRoot, "init")
 		require.NoError(t, cmd.Run())
 
-		pathResolver := fs.NewPathResolver()
-		_, err := distDirectory(pathResolver, gitRoot, "dist")
+		pathResolver := fsh.NewPathResolver()
+		_, err := distDirectory(context.Background(), pathResolver, gitRoot, "dist")
 		require.Error(t, err)
 		var rootErr *RegistryRootAtGitRootError
 		require.ErrorAs(t, err, &rootErr)
@@ -777,8 +781,8 @@ func TestDistDirectory(t *testing.T) {
 		require.NoError(t, os.MkdirAll(regRoot, 0o755))
 		regRoot, _ = filepath.EvalSymlinks(regRoot)
 
-		pathResolver := fs.NewPathResolver()
-		dist, err := distDirectory(pathResolver, regRoot, "dist")
+		pathResolver := fsh.NewPathResolver()
+		dist, err := distDirectory(context.Background(), pathResolver, regRoot, "dist")
 		require.NoError(t, err)
 
 		expected := filepath.Join(filepath.Dir(regRoot), "dist")
@@ -799,10 +803,10 @@ func TestDistDirectory(t *testing.T) {
 		require.NoError(t, os.MkdirAll(gitRoot, 0o755))
 
 		// Init git so distDirectory reaches the canonicalPath call
-		cmd := exec.Command("git", "-C", gitRoot, "init")
+		cmd := exec.CommandContext(context.Background(), "git", "-C", gitRoot, "init")
 		require.NoError(t, cmd.Run())
 
-		_, err := distDirectory(mockResolver, gitRoot, "dist")
+		_, err := distDirectory(context.Background(), mockResolver, gitRoot, "dist")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "canonical error")
 	})
@@ -828,7 +832,7 @@ environments:
 	schemaFile := filepath.Join(schemaDir, "domain_test_1_0_0.schema.json")
 	require.NoError(t, os.WriteFile(schemaFile, []byte(`{"type": "object"}`), 0o600))
 
-	reg, err := NewRegistry(dir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+	reg, err := NewRegistry(dir, &mockCompiler{}, fsh.NewPathResolver(), fsh.NewEnvProvider())
 	require.NoError(t, err)
 	return reg
 }
@@ -849,7 +853,10 @@ environments:
     publicUrlRoot: https://example.com/public
     privateUrlRoot: https://example.com/private
 `
-	require.NoError(t, os.WriteFile(filepath.Join(regDir, "json-schema-manager-config.yml"), []byte(configContent), 0o600))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(regDir, "json-schema-manager-config.yml"), []byte(configContent), 0o600),
+	)
 
 	// Create a public schema
 	publicDir := filepath.Join(regDir, "domain", "public", "1", "0", "0")
@@ -861,14 +868,17 @@ environments:
 	privateDir := filepath.Join(regDir, "domain", "private", "1", "0", "0")
 	require.NoError(t, os.MkdirAll(privateDir, 0o755))
 	privateContent := []byte(`{"type": "object"}`)
-	require.NoError(t, os.WriteFile(filepath.Join(privateDir, "domain_private_1_0_0.schema.json"), privateContent, 0o600))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(privateDir, "domain_private_1_0_0.schema.json"), privateContent, 0o600),
+	)
 
-	reg, err := NewRegistry(regDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+	reg, err := NewRegistry(regDir, &mockCompiler{}, fsh.NewPathResolver(), fsh.NewEnvProvider())
 	require.NoError(t, err)
 	cfg, err := reg.Config()
 	require.NoError(t, err)
 
-	builder, err := NewFSDistBuilder(reg, cfg, &mockGitter{}, "dist")
+	builder, err := NewFSDistBuilder(context.Background(), reg, cfg, &mockGitter{}, "dist")
 	require.NoError(t, err)
 
 	count, err := builder.BuildAll(context.Background(), "production")
