@@ -458,7 +458,6 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
-		// Many changes and small intervals to increase chance of hitting cancellation
 		var changes []repo.Change
 		for i := 0; i < 500; i++ {
 			schemaPath := fmt.Sprintf("schema%d.json", i)
@@ -468,8 +467,10 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 			})
 		}
 
+		returned := make(chan struct{})
 		gitter := &mockGitter{
 			getSchemaChangesFunc: func(_ context.Context, _ repo.Revision, _, _ string) ([]repo.Change, error) {
+				close(returned)
 				return changes, nil
 			},
 		}
@@ -478,16 +479,13 @@ func TestDistBuilder_BuildChanged(t *testing.T) {
 		builder.SetNumWorkers(1)
 
 		go func() {
-			time.Sleep(1 * time.Millisecond)
+			<-returned
 			cancel()
 		}()
 
 		_, err = builder.BuildChanged(ctx, "production", repo.Revision("HEAD"))
-		// We expect context.Canceled if it hits the loop, but success is okay as long as we tried.
-		// However, for 100% coverage, we NEED it to hit context.Canceled eventually.
-		if err != nil {
-			assert.ErrorIs(t, err, context.Canceled)
-		}
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("worker result error in BuildChanged", func(t *testing.T) {

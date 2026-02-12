@@ -44,12 +44,12 @@ func main() {
 
 func getToolsForWorkflow(workflow string) map[string]string {
 	allTools := map[string]string{
-		"lefthook":      "github.com/evilmartians/lefthook@v1.7.1",
-		"golangci-lint": "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0",
-		"goreleaser":    "github.com/goreleaser/goreleaser/v2@v2.3.0",
-		"staticcheck":   "honnef.co/go/tools/cmd/staticcheck@2023.1.7",
-		"gotestsum":     "gotest.tools/gotestsum@v1.12.0",
-		"gofumpt":       "mvdan.cc/gofumpt@v0.7.0",
+		"lefthook":      "github.com/evilmartians/lefthook@v1",
+		"golangci-lint": "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2",
+		"goreleaser":    "github.com/goreleaser/goreleaser/v2@v2",
+		"staticcheck":   "honnef.co/go/tools/cmd/staticcheck@latest",
+		"gotestsum":     "gotest.tools/gotestsum@v1",
+		"gofumpt":       "mvdan.cc/gofumpt@latest",
 	}
 
 	switch workflow {
