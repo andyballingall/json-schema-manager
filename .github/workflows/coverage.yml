@@ -42,10 +42,10 @@ jobs:
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
 
-                  if git diff --quiet; then
-                    echo "No changes to coverage badge"
-                  else
-                    git add coverage.svg
-                    git commit -m "chore: update coverage badge"
-                    git push
-                  fi
+                   if ! git status --porcelain | grep -q .; then
+                     echo "No changes to coverage badge"
+                   else
+                     git add coverage.svg
+                     git commit -m "chore: update coverage badge"
+                     git push
+                   fi
