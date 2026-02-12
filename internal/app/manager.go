@@ -1,3 +1,4 @@
+// Package app provides the core application logic for JSM.
 package app
 
 import (
@@ -39,6 +40,7 @@ type LazyManager struct {
 	inner Manager
 }
 
+// SetInner sets the inner manager implementation.
 func (l *LazyManager) SetInner(m Manager) {
 	l.inner = m
 }
@@ -56,12 +58,14 @@ func (l *LazyManager) check() Manager {
 	return l.inner
 }
 
+// ValidateSchema implements the Manager interface.
 func (l *LazyManager) ValidateSchema(ctx context.Context, target schema.ResolvedTarget, verbose bool,
 	format string, useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool,
 ) error {
 	return l.check().ValidateSchema(ctx, target, verbose, format, useColour, continueOnError, testScope, skipCompatible)
 }
 
+// WatchValidation implements the Manager interface.
 func (l *LazyManager) WatchValidation(ctx context.Context, target schema.ResolvedTarget, verbose bool,
 	format string, useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool,
 	readyChan chan<- struct{},
@@ -70,30 +74,37 @@ func (l *LazyManager) WatchValidation(ctx context.Context, target schema.Resolve
 		testScope, skipCompatible, readyChan)
 }
 
+// Registry implements the Manager interface.
 func (l *LazyManager) Registry() *schema.Registry {
 	return l.check().Registry()
 }
 
+// CreateSchema implements the Manager interface.
 func (l *LazyManager) CreateSchema(domainAndFamilyName string) (schema.Key, error) {
 	return l.check().CreateSchema(domainAndFamilyName)
 }
 
+// CreateSchemaVersion implements the Manager interface.
 func (l *LazyManager) CreateSchemaVersion(k schema.Key, rt schema.ReleaseType) (schema.Key, error) {
 	return l.check().CreateSchemaVersion(k, rt)
 }
 
+// RenderSchema implements the Manager interface.
 func (l *LazyManager) RenderSchema(ctx context.Context, target schema.ResolvedTarget, env config.Env) ([]byte, error) {
 	return l.check().RenderSchema(ctx, target, env)
 }
 
+// CheckChanges implements the Manager interface.
 func (l *LazyManager) CheckChanges(ctx context.Context, envName config.Env) error {
 	return l.check().CheckChanges(ctx, envName)
 }
 
+// TagDeployment implements the Manager interface.
 func (l *LazyManager) TagDeployment(ctx context.Context, envName config.Env) error {
 	return l.check().TagDeployment(ctx, envName)
 }
 
+// BuildDist implements the Manager interface.
 func (l *LazyManager) BuildDist(ctx context.Context, envName config.Env, all bool) error {
 	return l.check().BuildDist(ctx, envName, all)
 }
@@ -111,6 +122,7 @@ type CLIManager struct {
 	reporterWriter io.Writer
 }
 
+// NewCLIManager creates a new concrete Manager implementation.
 func NewCLIManager(
 	l *slog.Logger,
 	r *schema.Registry,
@@ -129,10 +141,12 @@ func NewCLIManager(
 	}
 }
 
+// Registry returns the underlying schema registry.
 func (m *CLIManager) Registry() *schema.Registry {
 	return m.registry
 }
 
+// CreateSchema creates a new schema with the given name.
 func (m *CLIManager) CreateSchema(domainAndFamilyName string) (schema.Key, error) {
 	s, err := m.registry.CreateSchema(domainAndFamilyName)
 	if err != nil {
@@ -141,6 +155,7 @@ func (m *CLIManager) CreateSchema(domainAndFamilyName string) (schema.Key, error
 	return s.Key(), nil
 }
 
+// CreateSchemaVersion increments the version of an existing schema.
 func (m *CLIManager) CreateSchemaVersion(k schema.Key, rt schema.ReleaseType) (schema.Key, error) {
 	m.logger.Debug("creating schema version", "key", k, "releaseType", rt)
 	s, err := m.registry.CreateSchemaVersion(k, rt)
@@ -150,6 +165,7 @@ func (m *CLIManager) CreateSchemaVersion(k schema.Key, rt schema.ReleaseType) (s
 	return s.Key(), nil
 }
 
+// ValidateSchema runs tests on the target schema(s).
 func (m *CLIManager) ValidateSchema(ctx context.Context, target schema.ResolvedTarget, verbose bool,
 	format string, useColour bool, continueOnError bool, testScope schema.TestScope, skipCompatible bool,
 ) error {
@@ -204,48 +220,7 @@ func (m *CLIManager) WatchValidation(ctx context.Context, target schema.Resolved
 	watcher := schema.NewWatcher(m.registry, m.logger)
 
 	callback := func(event schema.WatchEvent) {
-		// Filter events based on target
-		if target.Key != nil && event.Key != *target.Key {
-			return
-		}
-		if target.Scope != nil && !event.Key.InScope(*target.Scope) {
-			return
-		}
-
-		// Create a new tester for each event to ensure fresh reporting
-		tester := schema.NewTester(m.registry)
-		tester.SetStopOnFirstError(!continueOnError)
-		tester.SetScope(testScope)
-		tester.SetSkipCompatible(skipCompatible)
-
-		var tr *schema.TestReport
-		var err error
-
-		if event.TestPath != "" {
-			m.logger.Info("Test changed:", "schema", event.Key, "test", event.TestPath)
-			tr, err = tester.TestSpecificDocument(ctx, event.Key, event.TestPath)
-		} else {
-			m.logger.Info("Schema changed:", "schema", event.Key)
-			m.registry.Reset()
-			tr, err = tester.TestSingleSchema(ctx, event.Key)
-		}
-
-		if err != nil {
-			m.logger.Error("Validation failed", "error", err)
-			return
-		}
-
-		var reporter schema.Reporter
-		switch format {
-		case "json":
-			reporter = &report.JSONReporter{}
-		default:
-			reporter = &report.TextReporter{Verbose: verbose, UseColour: useColour}
-		}
-
-		if rErr := reporter.Write(m.reporterWriter, tr); rErr != nil {
-			m.logger.Error("Failed to write report", "error", rErr)
-		}
+		m.handleWatchEvent(ctx, event, target, verbose, format, useColour, continueOnError, testScope, skipCompatible)
 	}
 
 	// Forward watcher Ready signal if caller wants notification
@@ -259,6 +234,55 @@ func (m *CLIManager) WatchValidation(ctx context.Context, target schema.Resolved
 	return watcher.Watch(ctx, callback)
 }
 
+func (m *CLIManager) handleWatchEvent(ctx context.Context, event schema.WatchEvent, target schema.ResolvedTarget,
+	verbose bool, format string, useColour bool, continueOnError bool,
+	testScope schema.TestScope, skipCompatible bool,
+) {
+	// Filter events based on target
+	if target.Key != nil && event.Key != *target.Key {
+		return
+	}
+	if target.Scope != nil && !event.Key.InScope(*target.Scope) {
+		return
+	}
+
+	// Create a new tester for each event to ensure fresh reporting
+	tester := schema.NewTester(m.registry)
+	tester.SetStopOnFirstError(!continueOnError)
+	tester.SetScope(testScope)
+	tester.SetSkipCompatible(skipCompatible)
+
+	var tr *schema.TestReport
+	var err error
+
+	if event.TestPath != "" {
+		m.logger.Info("Test changed:", "schema", event.Key, "test", event.TestPath)
+		tr, err = tester.TestSpecificDocument(ctx, event.Key, event.TestPath)
+	} else {
+		m.logger.Info("Schema changed:", "schema", event.Key)
+		m.registry.Reset()
+		tr, err = tester.TestSingleSchema(ctx, event.Key)
+	}
+
+	if err != nil {
+		m.logger.Error("Validation failed", "error", err)
+		return
+	}
+
+	var reporter schema.Reporter
+	switch format {
+	case "json":
+		reporter = &report.JSONReporter{}
+	default:
+		reporter = &report.TextReporter{Verbose: verbose, UseColour: useColour}
+	}
+
+	if rErr := reporter.Write(m.reporterWriter, tr); rErr != nil {
+		m.logger.Error("Failed to write report", "error", rErr)
+	}
+}
+
+// RenderSchema renders a schema for a specific environment.
 func (m *CLIManager) RenderSchema(_ context.Context, target schema.ResolvedTarget, env config.Env) ([]byte, error) {
 	m.logger.Debug("rendering schema", "target", target, "env", env)
 
@@ -284,7 +308,7 @@ func (m *CLIManager) RenderSchema(_ context.Context, target schema.ResolvedTarge
 				validEnvs = append(validEnvs, string(e))
 			}
 			slices.Sort(validEnvs)
-			return nil, fmt.Errorf("Invalid environment: '%s'. Valid environments are: '%s'",
+			return nil, fmt.Errorf("invalid environment: '%s'. Valid environments are: '%s'",
 				env, strings.Join(validEnvs, "', '"))
 		}
 	}
@@ -304,7 +328,7 @@ func (m *CLIManager) RenderSchema(_ context.Context, target schema.ResolvedTarge
 
 // CheckChanges determines whether there are any changes to previously-deployed schemas for an environment which
 // does not permit schema mutation. If so, it returns an error.
-func (m *CLIManager) CheckChanges(_ context.Context, envName config.Env) error {
+func (m *CLIManager) CheckChanges(ctx context.Context, envName config.Env) error {
 	m.logger.Debug("checking changes", "env", envName)
 
 	cfg, err := m.registry.Config()
@@ -317,12 +341,12 @@ func (m *CLIManager) CheckChanges(_ context.Context, envName config.Env) error {
 		return err
 	}
 
-	anchor, err := m.gitter.GetLatestAnchor(envName)
+	anchor, err := m.gitter.GetLatestAnchor(ctx, envName)
 	if err != nil {
 		return err
 	}
 
-	changes, err := m.gitter.GetSchemaChanges(anchor, m.registry.RootDirectory(), schema.SchemaSuffix)
+	changes, err := m.gitter.GetSchemaChanges(ctx, anchor, m.registry.RootDirectory(), schema.SchemaSuffix)
 	if err != nil {
 		return err
 	}
@@ -340,11 +364,12 @@ func (m *CLIManager) CheckChanges(_ context.Context, envName config.Env) error {
 		}
 	}
 
-	fmt.Println("All changes are valid")
+	_, _ = fmt.Fprintln(m.reporterWriter, "All changes are valid")
 	return nil
 }
 
-func (m *CLIManager) TagDeployment(_ context.Context, envName config.Env) error {
+// TagDeployment ensures that a successful deployment is tagged in git.
+func (m *CLIManager) TagDeployment(ctx context.Context, envName config.Env) error {
 	m.logger.Debug("tagging deployment", "env", envName)
 
 	cfg, err := m.registry.Config()
@@ -356,20 +381,21 @@ func (m *CLIManager) TagDeployment(_ context.Context, envName config.Env) error 
 		return envErr
 	}
 
-	tagName, err := m.gitter.TagDeploymentSuccess(envName)
+	tagName, err := m.gitter.TagDeploymentSuccess(ctx, envName)
 	if err != nil {
 		if tagName != "" {
 			m.logger.Warn("tag was created but could not be pushed", "tag", tagName, "error", err)
-			fmt.Printf("🏷️  Tag created locally but failed to push: %s\n", tagName)
+			_, _ = fmt.Fprintf(m.reporterWriter, "🏷️  Tag created locally but failed to push: %s\n", tagName)
 			return nil // Consider it success if tag created? Or error?
 		}
 		return err
 	}
 
-	fmt.Printf("🏷️  Successfully tagged and pushed deployment: %s\n", tagName)
+	_, _ = fmt.Fprintf(m.reporterWriter, "🏷️  Successfully tagged and pushed deployment: %s\n", tagName)
 	return nil
 }
 
+// BuildDist builds a distribution directory for the given environment.
 func (m *CLIManager) BuildDist(ctx context.Context, envName config.Env, all bool) error {
 	m.logger.Debug("building distribution", "env", envName, "all", all)
 
@@ -383,7 +409,7 @@ func (m *CLIManager) BuildDist(ctx context.Context, envName config.Env, all bool
 			return ccErr
 		}
 
-		anchor, anchorErr := m.gitter.GetLatestAnchor(envName)
+		anchor, anchorErr := m.gitter.GetLatestAnchor(ctx, envName)
 		if anchorErr != nil {
 			return anchorErr
 		}
@@ -396,10 +422,10 @@ func (m *CLIManager) BuildDist(ctx context.Context, envName config.Env, all bool
 	}
 
 	if count == 0 {
-		fmt.Println("No schemas to build")
+		_, _ = fmt.Fprintln(m.reporterWriter, "No schemas to build")
 		return nil
 	}
 
-	fmt.Printf("📂 Successfully built %d schemas to distribution directory\n", count)
+	_, _ = fmt.Fprintf(m.reporterWriter, "📂 Successfully built %d schemas to distribution directory\n", count)
 	return nil
 }

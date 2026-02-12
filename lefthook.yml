@@ -23,10 +23,8 @@ pre-commit:
   commands:
     lint:
       run: go run scripts/lint/main.go
-    test-race:
-      run: go run scripts/tester/main.go -race -count=1 ./... -v
-    check-coverage:
-      run: go run scripts/tester/main.go --check-coverage -count=1 -race ./...
+    test-race-coverage:
+      run: go run scripts/tester/main.go --test-race-coverage -count=1 -race ./...
     release-check:
       run: go run scripts/release_check/main.go
       interactive: true

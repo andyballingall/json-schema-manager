@@ -1,3 +1,4 @@
+// Package report provides reporting functionality for JSM.
 package report
 
 import (

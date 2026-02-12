@@ -25,20 +25,25 @@ func NewSpec(s *Schema, testInfo TestInfo, testDocType TestDocType, forwardVersi
 	}
 }
 
-func (s *Spec) Run(validator validator.Validator) error {
+// Run executes the spec using the given validator.
+func (s *Spec) Run(v validator.Validator) error {
 	u := s.TestInfo.Unmarshalled
 
 	if s.TestDocType == TestDocTypePass {
-		err := validator.Validate(u)
+		err := v.Validate(u)
 		if err != nil {
-			s.Err = &PassTestFailedError{SchemaPath: s.Schema.Path(FilePath), TestDocPath: s.TestInfo.Path, Wrapped: err}
+			s.Err = &PassTestFailedError{
+				SchemaPath:  s.Schema.Path(FilePath),
+				TestDocPath: s.TestInfo.Path,
+				Wrapped:     err,
+			}
 			return s.Err
 		}
 		return nil
 	}
 
 	// We expected it to fail and it passed:
-	if err := validator.Validate(u); err == nil {
+	if err := v.Validate(u); err == nil {
 		s.Err = &FailTestPassedError{SchemaPath: s.Schema.Path(FilePath), TestDocPath: s.TestInfo.Path}
 		return s.Err
 	}

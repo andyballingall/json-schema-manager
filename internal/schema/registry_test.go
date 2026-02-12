@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 func TestNewRegistry(t *testing.T) {
@@ -121,7 +122,11 @@ environments:
       publicUrlRoot: "https://json-schemas.myorg.io/"
       isProduction: true
 `
-				if err := os.WriteFile(filepath.Join(regDir, config.JsmRegistryConfigFile), []byte(content), 0o600); err != nil {
+				if err := os.WriteFile(
+					filepath.Join(regDir, config.JsmRegistryConfigFile),
+					[]byte(content),
+					0o600,
+				); err != nil {
 					t.Fatal(err)
 				}
 				return regDir
@@ -135,8 +140,8 @@ environments:
 			t.Parallel()
 			path := tt.setup(t)
 			compiler := &mockCompiler{}
-			pathResolver := fs.NewPathResolver()
-			envProvider := fs.NewEnvProvider()
+			pathResolver := fsh.NewPathResolver()
+			envProvider := fsh.NewEnvProvider()
 			r, err := NewRegistry(path, compiler, pathResolver, envProvider)
 
 			if tt.expectErr != nil {
@@ -637,7 +642,11 @@ func TestCreateSchemaVersion(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.NotNil(t, newSchema)
-			assert.Equal(t, tt.wantVersion, [3]uint64{newSchema.Key().Major(), newSchema.Key().Minor(), newSchema.Key().Patch()})
+			assert.Equal(
+				t,
+				tt.wantVersion,
+				[3]uint64{newSchema.Key().Major(), newSchema.Key().Minor(), newSchema.Key().Patch()},
+			)
 			assert.Contains(t, r.cache, newSchema.Key())
 		})
 	}
@@ -657,7 +666,7 @@ func TestNewRegistry_StatErrAfterCanonicalPath(t *testing.T) {
 	}
 
 	compiler := &mockCompiler{}
-	envProvider := fs.NewEnvProvider()
+	envProvider := fsh.NewEnvProvider()
 	_, err := NewRegistry("/some/path", compiler, mockResolver, envProvider)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no such file or directory")
@@ -777,6 +786,50 @@ func TestGetSchemaByKey_DoubleCheck_Deterministic(t *testing.T) {
 	// to occasionally hit it. The 90% threshold in the tester script handles this.
 }
 
+func TestGetSchemaByKey_LoadError(t *testing.T) {
+	t.Parallel()
+	r := setupTestRegistry(t)
+	k := Key("domain_family_1_0_0")
+	s := New(k, r)
+	require.NoError(t, os.MkdirAll(s.Path(HomeDir), 0o755))
+	// Write invalid JSON to trigger data unmarshal error in Load
+	require.NoError(t, os.WriteFile(s.Path(FilePath), []byte(`{ invalid`), 0o600))
+
+	s2, err := r.GetSchemaByKey(k)
+	require.Error(t, err)
+	assert.Nil(t, s2)
+}
+
+func TestGetSchemaByKey_DoubleCheck_Race(t *testing.T) {
+	t.Parallel()
+	r := setupTestRegistry(t)
+	k := Key("domain_family_1_0_0")
+	s := New(k, r)
+	require.NoError(t, os.MkdirAll(s.Path(HomeDir), 0o755))
+	require.NoError(t, os.WriteFile(s.Path(FilePath), []byte(`{}`), 0o600))
+
+	for i := 0; i < 5000; i++ {
+		r.mu.Lock()
+		delete(r.cache, k)
+		r.mu.Unlock()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, _ = r.GetSchemaByKey(k)
+		}()
+		go func() {
+			defer wg.Done()
+			runtime.Gosched()
+			r.mu.Lock()
+			r.cache[k] = s
+			r.mu.Unlock()
+		}()
+		wg.Wait()
+	}
+}
+
 func TestRegistryDiscovery(t *testing.T) {
 	t.Parallel()
 
@@ -792,7 +845,7 @@ func TestRegistryDiscovery(t *testing.T) {
 				"JSM_REGISTRY_ROOT_DIR": tmpDir,
 			},
 		}
-		pathResolver := fs.NewPathResolver()
+		pathResolver := fsh.NewPathResolver()
 
 		rd, err := initRootDirectory("", pathResolver, mockEnv)
 		require.NoError(t, err)
@@ -837,20 +890,6 @@ func TestGetSchemaByKey_DoubleCheckCache(t *testing.T) {
 	s, err := reg.GetSchemaByKey(key)
 	require.NoError(t, err)
 	assert.NotNil(t, s)
-}
-
-func TestGetSchemaByKey_LoadError(t *testing.T) {
-	t.Parallel()
-	r := setupTestRegistry(t)
-	k := Key("domain_family_1_0_0")
-
-	// Create a schema file with invalid JSON to make Load fail
-	s := New(k, r)
-	require.NoError(t, os.MkdirAll(s.Path(HomeDir), 0o755))
-	require.NoError(t, os.WriteFile(s.Path(FilePath), []byte("{ invalid }"), 0o600))
-
-	_, err := r.GetSchemaByKey(k)
-	require.Error(t, err)
 }
 
 func TestRegistry_GetSchemaByKey_Concurrent(t *testing.T) {

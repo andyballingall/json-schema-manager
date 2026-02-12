@@ -230,6 +230,7 @@ func TestTargetResolver(t *testing.T) {
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.wantErrType != nil {
+					//nolint:testifylint // IsType is appropriate for table-driven tests with interface{}
 					assert.IsType(t, tt.wantErrType, err)
 				}
 				return
@@ -267,7 +268,7 @@ func TestTargetResolver(t *testing.T) {
 		parentDir := filepath.Dir(r.rootDirectory)
 		_, err := ar.resolvePathToScope(parentDir)
 		require.Error(t, err)
-		assert.IsType(t, &LocationOutsideRootDirectoryError{}, err)
+		assert.ErrorAs(t, err, new(*LocationOutsideRootDirectoryError))
 	})
 
 	t.Run("ResolveScopeToSingleKey exactly one match", func(t *testing.T) {
@@ -288,7 +289,7 @@ func TestTargetResolver(t *testing.T) {
 		ar := NewTargetResolver(r, "")
 		_, err := ar.ResolveScopeToSingleKey(context.Background(), "nonexistent", "nonexistent")
 		require.Error(t, err)
-		assert.IsType(t, &NotFoundError{}, err)
+		assert.ErrorAs(t, err, new(*NotFoundError))
 	})
 
 	t.Run("ResolveScopeToSingleKey zero matches with existing directory", func(t *testing.T) {
@@ -301,7 +302,7 @@ func TestTargetResolver(t *testing.T) {
 
 		_, err := ar.ResolveScopeToSingleKey(context.Background(), "empty", "empty")
 		require.Error(t, err)
-		assert.IsType(t, &NotFoundError{}, err)
+		assert.ErrorAs(t, err, new(*NotFoundError))
 	})
 
 	t.Run("ResolveScopeToSingleKey searcher error", func(t *testing.T) {
@@ -333,6 +334,6 @@ func TestTargetResolver(t *testing.T) {
 		ar := NewTargetResolver(r2, "")
 		_, err := ar.ResolveScopeToSingleKey(context.Background(), "domain", "domain")
 		require.Error(t, err)
-		assert.IsType(t, &TargetArgumentTargetsMultipleSchemasError{}, err)
+		assert.ErrorAs(t, err, new(*TargetArgumentTargetsMultipleSchemasError))
 	})
 }

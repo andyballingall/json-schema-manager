@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
@@ -69,8 +69,8 @@ func setupTestRegistry(t *testing.T) *Registry {
 		t.Fatal(err)
 	}
 	compiler := &mockCompiler{}
-	pathResolver := fs.NewPathResolver()
-	envProvider := fs.NewEnvProvider()
+	pathResolver := fsh.NewPathResolver()
+	envProvider := fsh.NewEnvProvider()
 	r, err := NewRegistry(regDir, compiler, pathResolver, envProvider)
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func createSchemaFiles(t *testing.T, r *Registry, schemas schemaMap) {
 	}
 }
 
-// mockPathResolver is a test implementation of fs.PathResolver.
+// mockPathResolver is a test implementation of fsh.PathResolver.
 type mockPathResolver struct {
 	canonicalPathFn       func(path string) (string, error)
 	absFn                 func(path string) (string, error)
@@ -113,7 +113,7 @@ func (m *mockPathResolver) CanonicalPath(path string) (string, error) {
 	if m.canonicalPathFn != nil {
 		return m.canonicalPathFn(path)
 	}
-	return fs.NewPathResolver().CanonicalPath(path)
+	return fsh.NewPathResolver().CanonicalPath(path)
 }
 
 func (m *mockPathResolver) Abs(path string) (string, error) {
@@ -127,10 +127,10 @@ func (m *mockPathResolver) GetUintSubdirectories(dirPath string) ([]uint64, erro
 	if m.getUintSubdirectories != nil {
 		return m.getUintSubdirectories(dirPath)
 	}
-	return fs.GetUintSubdirectories(dirPath)
+	return fsh.GetUintSubdirectories(dirPath)
 }
 
-// mockEnvProvider is a test implementation of fs.EnvProvider.
+// mockEnvProvider is a test implementation of fsh.EnvProvider.
 type mockEnvProvider struct {
 	values map[string]string
 }

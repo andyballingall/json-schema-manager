@@ -108,7 +108,13 @@ environments:
 		env := &mockEnvProvider{values: map[string]string{
 			"JSM_REGISTRY_ROOT_DIR": regDir,
 		}}
-		err := Run(context.Background(), []string{"jsm", "--debug", "validate", "missing_1_0_0"}, io.Discard, io.Discard, env)
+		err := Run(
+			context.Background(),
+			[]string{"jsm", "--debug", "validate", "missing_1_0_0"},
+			io.Discard,
+			io.Discard,
+			env,
+		)
 		require.Error(t, err)
 	})
 
@@ -118,7 +124,7 @@ environments:
 		gitRoot := filepath.Join(tmpDir, "project")
 		require.NoError(t, os.MkdirAll(gitRoot, 0o755))
 
-		cmd := exec.Command("git", "init", gitRoot)
+		cmd := exec.CommandContext(context.Background(), "git", "init", gitRoot)
 		require.NoError(t, cmd.Run())
 
 		require.NoError(t, os.WriteFile(

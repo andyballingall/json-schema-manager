@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"testing"
 
@@ -23,6 +24,8 @@ func TestCreateSchemaCmd(t *testing.T) {
 			registry: reg,
 		}
 		cmd := NewCreateSchemaCmd(mgr)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
 		return mgr, cmd
 	}
 

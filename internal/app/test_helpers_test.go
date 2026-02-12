@@ -80,28 +80,32 @@ func (m *MockManager) BuildDist(ctx context.Context, envName config.Env, all boo
 
 // MockGitter is a test mock for the repo.Gitter interface.
 type MockGitter struct {
-	GetLatestAnchorFunc  func(env config.Env) (repo.Revision, error)
-	TagDeploymentFunc    func(env config.Env) (string, error)
-	GetSchemaChangesFunc func(anchor repo.Revision, sourceDir, suffix string) ([]repo.Change, error)
+	GetLatestAnchorFunc  func(ctx context.Context, env config.Env) (repo.Revision, error)
+	TagDeploymentFunc    func(ctx context.Context, env config.Env) (string, error)
+	GetSchemaChangesFunc func(ctx context.Context, anchor repo.Revision, sourceDir, suffix string) ([]repo.Change, error)
 }
 
-func (m *MockGitter) GetLatestAnchor(env config.Env) (repo.Revision, error) {
+func (m *MockGitter) GetLatestAnchor(ctx context.Context, env config.Env) (repo.Revision, error) {
 	if m.GetLatestAnchorFunc != nil {
-		return m.GetLatestAnchorFunc(env)
+		return m.GetLatestAnchorFunc(ctx, env)
 	}
 	return "HEAD", nil
 }
 
-func (m *MockGitter) TagDeploymentSuccess(env config.Env) (string, error) {
+func (m *MockGitter) TagDeploymentSuccess(ctx context.Context, env config.Env) (string, error) {
 	if m.TagDeploymentFunc != nil {
-		return m.TagDeploymentFunc(env)
+		return m.TagDeploymentFunc(ctx, env)
 	}
 	return "jsm-deploy/prod/20260130-120000", nil
 }
 
-func (m *MockGitter) GetSchemaChanges(anchor repo.Revision, sourceDir, suffix string) ([]repo.Change, error) {
+func (m *MockGitter) GetSchemaChanges(
+	ctx context.Context,
+	anchor repo.Revision,
+	sourceDir, suffix string,
+) ([]repo.Change, error) {
 	if m.GetSchemaChangesFunc != nil {
-		return m.GetSchemaChangesFunc(anchor, sourceDir, suffix)
+		return m.GetSchemaChangesFunc(ctx, anchor, sourceDir, suffix)
 	}
 	return nil, nil
 }

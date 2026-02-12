@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 func TestSetupLogger(t *testing.T) {
@@ -24,10 +24,10 @@ func TestSetupLogger(t *testing.T) {
 		tempDir := t.TempDir()
 		logLevel := &slog.LevelVar{}
 		stderr := &bytes.Buffer{}
-		envProvider := fs.NewEnvProvider()
+		envProvider := fsh.NewEnvProvider()
 		logger, closer, err := setupLogger(stderr, logLevel, tempDir, "", envProvider)
 		require.NoError(t, err)
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 		assert.NotNil(t, logger)
 		assert.FileExists(t, filepath.Join(tempDir, LogFile))
 	})
@@ -42,7 +42,7 @@ func TestSetupLogger(t *testing.T) {
 		envProvider := &mockEnvProvider{values: map[string]string{LogEnvVar: logFile}}
 		logger, closer, err := setupLogger(stderr, logLevel, "", "", envProvider)
 		require.NoError(t, err)
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 		assert.NotNil(t, logger)
 		assert.FileExists(t, logFile)
 	})
@@ -53,13 +53,13 @@ func TestSetupLogger(t *testing.T) {
 		logLevel := &slog.LevelVar{}
 		logLevel.Set(slog.LevelInfo)
 		stderr := &bytes.Buffer{}
-		envProvider := fs.NewEnvProvider()
+		envProvider := fsh.NewEnvProvider()
 
 		logger, closer, err := setupLogger(stderr, logLevel, tempDir, "", envProvider)
 		require.NoError(t, err)
 		require.NotNil(t, logger)
 		require.NotNil(t, closer)
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 
 		logger.Info("test message", "key", "value")
 
@@ -86,7 +86,7 @@ func TestSetupLogger(t *testing.T) {
 
 		logger, closer, err := setupLogger(stderr, logLevel, "", "", envProvider)
 		require.NoError(t, err)
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 
 		logger.Info("custom log")
 		data, _ := os.ReadFile(logFile)
@@ -97,7 +97,7 @@ func TestSetupLogger(t *testing.T) {
 		t.Parallel()
 		logLevel := &slog.LevelVar{}
 		stderr := &bytes.Buffer{}
-		envProvider := fs.NewEnvProvider()
+		envProvider := fsh.NewEnvProvider()
 
 		// Point to a non-existent directory that cannot be created
 		logger, closer, err := setupLogger(stderr, logLevel, "/non/existent/path/unwritable", "", envProvider)
@@ -120,7 +120,7 @@ func TestSetupLogger(t *testing.T) {
 		// rd is empty, should use LogFile in wd (which we set to tmpDir)
 		logger, closer, err := setupLogger(stderr, logLevel, "", tmpDir, envProvider)
 		require.NoError(t, err)
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 
 		logger.Info("default log")
 		assert.FileExists(t, filepath.Join(tmpDir, LogFile))
@@ -139,8 +139,8 @@ func TestSetupLogger(t *testing.T) {
 		// But let's try to run it and cleanup.
 		logger, closer, err := setupLogger(stderr, logLevel, "", "", envProvider)
 		if err == nil {
-			defer closer.Close()
-			defer os.Remove(LogFile)
+			defer func() { _ = closer.Close() }()
+			defer func() { _ = os.Remove(LogFile) }()
 		}
 		assert.NotNil(t, logger)
 	})
@@ -149,7 +149,7 @@ func TestSetupLogger(t *testing.T) {
 		t.Parallel()
 		tempDir := t.TempDir()
 		logFile := filepath.Join(tempDir, "read-only.log")
-		//nolint:gosec // intentional read-only file for testing error handling
+
 		require.NoError(t, os.WriteFile(logFile, []byte(""), 0o444))
 
 		logLevel := &slog.LevelVar{}
@@ -279,7 +279,7 @@ func TestMultiHandler_Thorough(t *testing.T) {
 	})
 }
 
-// mockEnvProvider is a test implementation of fs.EnvProvider.
+// mockEnvProvider is a test implementation of fsh.EnvProvider.
 type mockEnvProvider struct {
 	values map[string]string
 }

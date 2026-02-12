@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
@@ -113,7 +113,7 @@ func TestNewRenderSchemaCmd(t *testing.T) {
 			configPath := filepath.Join(tmpDir, "json-schema-manager-config.yml")
 			require.NoError(t, os.WriteFile(configPath, []byte(simpleTestConfig), 0o600))
 
-			reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{}, fs.NewPathResolver(), fs.NewEnvProvider())
+			reg, rErr := schema.NewRegistry(tmpDir, &mockCompiler{}, fsh.NewPathResolver(), fsh.NewEnvProvider())
 			require.NoError(t, rErr)
 
 			// Create a dummy schema file for resolution to work
@@ -138,6 +138,7 @@ func TestNewRenderSchemaCmd(t *testing.T) {
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.wantErrType != nil {
+					//nolint:testifylint // IsType is appropriate for table-driven tests with interface{}
 					assert.IsType(t, tt.wantErrType, err)
 				}
 				return

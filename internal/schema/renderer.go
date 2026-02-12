@@ -17,6 +17,7 @@ type Renderer struct {
 	ec *config.EnvConfig // The target environment for which the schema is being rendered.
 }
 
+// NewRenderer creates a new renderer for the given schema and environment configuration.
 func NewRenderer(s *Schema, ec *config.EnvConfig) *Renderer {
 	return &Renderer{
 		s:  s,
@@ -61,7 +62,7 @@ func (r *Renderer) ID() (ID, error) {
 	return r.s.CanonicalID(r.ec), nil
 }
 
-// JSMTemplateCheck checks validity of the key.
+// JSM is a template function which returns the canonical ID of the referenced schema.
 func (r *Renderer) JSM(arg string) (ID, error) {
 	c, err := NewCoreFromString(arg, KeySeparator)
 	if err != nil {

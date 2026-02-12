@@ -26,11 +26,15 @@ type Cache map[Key]*Schema
 type ReleaseType string
 
 const (
+	// ReleaseTypeMajor indicates a major version release.
 	ReleaseTypeMajor ReleaseType = "major"
+	// ReleaseTypeMinor indicates a minor version release.
 	ReleaseTypeMinor ReleaseType = "minor"
+	// ReleaseTypePatch indicates a patch version release.
 	ReleaseTypePatch ReleaseType = "patch"
 )
 
+// NewReleaseType returns a ReleaseType from a string.
 func NewReleaseType(s string) (ReleaseType, error) {
 	s = strings.ToLower(s)
 	switch s {
@@ -49,21 +53,28 @@ func NewReleaseType(s string) (ReleaseType, error) {
 type TestDocType string
 
 const (
-	TestDocTypePass TestDocType = "pass" // A test document for a version of a schema which it should validate
-	TestDocTypeFail TestDocType = "fail" // A test document for a version of a schema which it should not validate
+	// TestDocTypePass is a test document for a version of a schema which it should validate.
+	TestDocTypePass TestDocType = "pass"
+	// TestDocTypeFail is a test document for a version of a schema which it should not validate.
+	TestDocTypeFail TestDocType = "fail"
 )
 
 // PathType is the type used to identify a particular type of path to generate for a schema.
 type PathType string
 
 const (
-	FamilyDir PathType = "familydir" // The path to the directory containing all the versions of a schema family
-	HomeDir   PathType = "homedir"   // The path to the directory containing a schema version, test files etc.
-	FilePath  PathType = "filepath"  // The absolute path of the schema file
+	// FamilyDir is the path to the directory containing all the versions of a schema family.
+	FamilyDir PathType = "familydir"
+	// HomeDir is the path to the directory containing a schema version, test files etc.
+	HomeDir PathType = "homedir"
+	// FilePath is the absolute path of the schema file.
+	FilePath PathType = "filepath"
 )
 
+// SchemaSuffix is the suffix for schema files.
 const SchemaSuffix = ".schema.json"
 
+// NewSchemaContent returns initial content for a new schema file.
 func NewSchemaContent(draft validator.Draft) string {
 	return `{
 	"$schema": "` + string(draft) + `",
@@ -115,6 +126,7 @@ func Load(k Key, r *Registry) (s *Schema, err error) {
 	s = New(k, r)
 	fp := s.Path(FilePath)
 
+	//nolint:gosec // Path is constructed from internal registry logic
 	data, err := os.ReadFile(fp)
 	if err != nil {
 		return nil, err
@@ -264,7 +276,7 @@ func (s *Schema) WriteNewSchemaFiles() error {
 	hd := s.Path(HomeDir)
 
 	// Create the missing parent folders
-	if err := os.MkdirAll(hd, 0o755); err != nil {
+	if err := os.MkdirAll(hd, 0o750); err != nil {
 		return err
 	}
 
@@ -280,11 +292,11 @@ func (s *Schema) WriteNewSchemaFiles() error {
 	}
 
 	// Create the pass and fail folders
-	err = os.Mkdir(filepath.Join(hd, string(TestDocTypePass)), 0o755)
+	err = os.Mkdir(filepath.Join(hd, string(TestDocTypePass)), 0o750)
 	if err != nil {
 		return err
 	}
-	err = os.Mkdir(filepath.Join(hd, string(TestDocTypeFail)), 0o755)
+	err = os.Mkdir(filepath.Join(hd, string(TestDocTypeFail)), 0o750)
 	if err != nil {
 		return err
 	}
@@ -300,7 +312,7 @@ func (s *Schema) DuplicateSchemaFiles(other *Schema) error {
 	hd := s.Path(HomeDir)
 
 	// Create the missing parent folders
-	if err := os.MkdirAll(hd, 0o755); err != nil {
+	if err := os.MkdirAll(hd, 0o750); err != nil {
 		return err
 	}
 
@@ -422,7 +434,6 @@ func (s *Schema) TestDocuments(tt TestDocType) ([]TestInfo, error) {
 // a) Belong to the same major version in the same family
 // b) Have a version which is later than this schema's version.
 //
-// Purpose:
 // This set of keys will be used to identify which schemas we should collect the 'pass' tests from in order to
 // validate that no future schema in the same family with the same major version breaks the contract represented by
 // this schema.
@@ -434,7 +445,6 @@ func (s *Schema) TestDocuments(tt TestDocType) ([]TestInfo, error) {
 // changes they want to do to an information payload will not break consumers in production. The aim is to identify
 // these accidental breakages AHEAD of the future schema being published, but JSM can also give a complete view of
 // breakages in supposedly non-breaking lineages of versions.
-
 func (s *Schema) MajorFamilyFutureSchemas() ([]Key, error) {
 	var keys []Key
 

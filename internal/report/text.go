@@ -35,14 +35,17 @@ func (tr *TextReporter) cs(c, s string) string {
 	return c + s + colReset
 }
 
+// Write implements the schema.Reporter interface.
+//
+//nolint:gocognit // high complexity report rendering logic
 func (tr *TextReporter) Write(w io.Writer, r *schema.TestReport) error {
 	divider := strings.Repeat("-", 40)
 
-	fmt.Fprintf(w, "%s\n", divider)
-	fmt.Fprint(w, tr.cs(colBoldWhite, "JSM TEST REPORT\n\n"))
-	fmt.Fprintf(w, "%s %s\n", tr.cs(colGrey, "Started: "), tr.cs(colWhite, r.StartTime.Format("15:04:05")))
-	fmt.Fprintf(w, "%s %s\n", tr.cs(colGrey, "Duration:"), tr.cs(colWhite, r.EndTime.Sub(r.StartTime).String()))
-	fmt.Fprintf(w, "%s\n", divider)
+	_, _ = fmt.Fprintf(w, "%s\n", divider)
+	_, _ = fmt.Fprint(w, tr.cs(colBoldWhite, "JSM TEST REPORT\n\n"))
+	_, _ = fmt.Fprintf(w, "%s %s\n", tr.cs(colGrey, "Started: "), tr.cs(colWhite, r.StartTime.Format("15:04:05")))
+	_, _ = fmt.Fprintf(w, "%s %s\n", tr.cs(colGrey, "Duration:"), tr.cs(colWhite, r.EndTime.Sub(r.StartTime).String()))
+	_, _ = fmt.Fprintf(w, "%s\n", divider)
 
 	// Collect all keys to ensure sorted output
 	keysMap := make(map[schema.Key]bool)
@@ -83,37 +86,37 @@ func (tr *TextReporter) Write(w io.Writer, r *schema.TestReport) error {
 		keyStr := tr.cs(keyCol, string(k)+schema.SchemaSuffix)
 		suffix := fmt.Sprintf("(pass: %d, fail: %d)", len(passed), len(failed))
 
-		fmt.Fprintf(w, "%s %s %s\n", status, keyStr, tr.cs(statusCol, suffix))
+		_, _ = fmt.Fprintf(w, "%s %s %s\n", status, keyStr, tr.cs(statusCol, suffix))
 
 		if tr.Verbose {
 			// Show for each schema, the tests that passed and failed, along with any errors
 			for _, spec := range passed {
-				fmt.Fprintf(w, "  %s %s (%s)\n",
+				_, _ = fmt.Fprintf(w, "  %s %s (%s)\n",
 					tr.cs(colGreen, "✓"),
 					tr.cs(colGrey, spec.TestInfo.Path),
 					tr.cs(colGreen, spec.ResultLabel()))
 			}
 
 			for _, spec := range failed {
-				fmt.Fprintf(w, "  %s %s (%s):\n",
+				_, _ = fmt.Fprintf(w, "  %s %s (%s):\n",
 					tr.cs(colRed, "✗"),
 					tr.cs(colGrey, spec.TestInfo.Path),
 					tr.cs(colRed, spec.ResultLabel()))
-				fmt.Fprintf(w, "    %v\n", spec.Err)
+				_, _ = fmt.Fprintf(w, "    %v\n", spec.Err)
 			}
 		} else {
 			// Just show the failures
 			for _, spec := range failed {
-				fmt.Fprintf(w, "  %s %s (%s):\n",
+				_, _ = fmt.Fprintf(w, "  %s %s (%s):\n",
 					tr.cs(colRed, "✗"),
 					tr.cs(colGrey, spec.TestInfo.Path),
 					tr.cs(colRed, spec.ResultLabel()))
-				fmt.Fprintf(w, "    %v\n", spec.Err)
+				_, _ = fmt.Fprintf(w, "    %v\n", spec.Err)
 			}
 		}
 	}
 
-	fmt.Fprintf(w, "%s\n", divider)
+	_, _ = fmt.Fprintf(w, "%s\n", divider)
 	summaryLabel := tr.cs(colBoldWhite, "Test summary: ")
 	summaryStats := fmt.Sprintf("%d passed, %d failed", totalPassed, totalFailed)
 	statsColor := colBoldGreen

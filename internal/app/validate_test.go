@@ -144,7 +144,8 @@ func TestValidateCmd(t *testing.T) {
 		key := schema.Key("domain_family_1_0_0")
 		target := schema.ResolvedTarget{Key: &key}
 		mgr.On("ValidateSchema", mock.Anything, target, false, "text", true, false, schema.TestScopeConsumerBreaking, false).
-			Return(nil).Once()
+			Return(nil).
+			Once()
 		cmd.SetArgs([]string{"domain_family_1_0_0", "--test-scope", "consumer-breaking"})
 		err := cmd.ExecuteContext(context.Background())
 		require.NoError(t, err)

@@ -36,7 +36,10 @@ func TestComputed_StoreRenderInfo(t *testing.T) {
 			info: RenderInfo{Rendered: []byte(`{"$id": "https://dev.example.com/schema.json"}`)},
 			setup: func() *Computed {
 				c := &Computed{}
-				c.StoreRenderInfo(config.Env("prod"), RenderInfo{Rendered: []byte(`{"$id": "https://example.com/prod.json"}`)})
+				c.StoreRenderInfo(
+					config.Env("prod"),
+					RenderInfo{Rendered: []byte(`{"$id": "https://example.com/prod.json"}`)},
+				)
 				return c
 			},
 			wantLen: 2,
@@ -47,7 +50,10 @@ func TestComputed_StoreRenderInfo(t *testing.T) {
 			info: RenderInfo{Rendered: []byte(`{"$id": "https://example.com/updated.json"}`)},
 			setup: func() *Computed {
 				c := &Computed{}
-				c.StoreRenderInfo(config.Env("prod"), RenderInfo{Rendered: []byte(`{"$id": "https://example.com/original.json"}`)})
+				c.StoreRenderInfo(
+					config.Env("prod"),
+					RenderInfo{Rendered: []byte(`{"$id": "https://example.com/original.json"}`)},
+				)
 				return c
 			},
 			wantLen: 1,

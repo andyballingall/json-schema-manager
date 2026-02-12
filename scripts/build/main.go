@@ -1,6 +1,8 @@
+// Package main provides a script to build the jsm binary.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,14 +17,14 @@ func main() {
 	}
 
 	// Get version
-	versionCmd := exec.Command("go", "run", "scripts/version/main.go")
+	versionCmd := exec.CommandContext(context.Background(), "go", "run", "scripts/version/main.go")
 	versionOut, _ := versionCmd.Output()
 	version := string(versionOut)
 
 	ldflags := fmt.Sprintf("-X github.com/andyballingall/json-schema-manager/internal/app.Version=%s", version)
 
 	// Ensure bin directory exists
-	if err := os.MkdirAll("bin", 0o755); err != nil {
+	if err := os.MkdirAll("bin", 0o750); err != nil {
 		fmt.Printf("❌ Failed to create bin directory: %v\n", err)
 		os.Exit(1)
 	}
@@ -30,7 +32,16 @@ func main() {
 	outputPath := filepath.Join("bin", binaryName)
 	fmt.Printf("Building %s...\n", version)
 
-	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", outputPath, "cmd/jsm/main.go")
+	cmd := exec.CommandContext(
+		context.Background(),
+		"go",
+		"build",
+		"-ldflags",
+		ldflags,
+		"-o",
+		outputPath,
+		"cmd/jsm/main.go",
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

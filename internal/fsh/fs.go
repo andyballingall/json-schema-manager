@@ -1,4 +1,4 @@
-package fs
+package fsh
 
 // defaultResolver is used by the package-level CanonicalPath function.
 var defaultResolver = NewPathResolver()

@@ -1,3 +1,4 @@
+// Package config provides configuration management for JSM.
 package config
 
 import (
@@ -12,8 +13,10 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
+// JsmRegistryConfigFile is the name of the JSM registry configuration file.
 const JsmRegistryConfigFile = "json-schema-manager-config.yml"
 
+// DefaultConfigContent is the default content for a new JSM registry configuration file.
 const DefaultConfigContent = `# Public Schema Registry Configuration
 
 # DEFAULT JSON SCHEMA VERSION
@@ -54,8 +57,10 @@ environments:
     isProduction: true # This environment is the production environment.
 `
 
+// Env represents a JSM environment name.
 type Env string
 
+// EnvConfig contains configuration for a specific JSM environment.
 type EnvConfig struct {
 	PublicURLRoot       string `yaml:"publicUrlRoot"`
 	PrivateURLRoot      string `yaml:"privateUrlRoot"`
@@ -64,12 +69,14 @@ type EnvConfig struct {
 	Env                 Env    // this is set for convenience when the environments are read in.
 }
 
+// Config represents the root JSM configuration.
 type Config struct {
 	Environments             map[Env]*EnvConfig `yaml:"environments"`
 	DefaultJSONSchemaVersion validator.Draft    `yaml:"defaultJsonSchemaVersion"`
 	ProductionEnv            Env                // this is set for convenience when the environments are read in.
 }
 
+// Validate validates an EnvConfig.
 func (e *EnvConfig) Validate(pathPrefix string) error {
 	if e.PublicURLRoot == "" {
 		return &MissingPropertyError{Property: fmt.Sprintf("%s.publicUrlRoot", pathPrefix)}
@@ -87,6 +94,7 @@ func (e *EnvConfig) Validate(pathPrefix string) error {
 	return nil
 }
 
+// URLRoot returns the URL root for the environment.
 func (e *EnvConfig) URLRoot(isPublic bool) string {
 	if isPublic {
 		return e.PublicURLRoot
@@ -94,12 +102,14 @@ func (e *EnvConfig) URLRoot(isPublic bool) string {
 	return e.PrivateURLRoot
 }
 
+// New creates a new Config by reading from the registry root directory.
 func New(registryRootDir string, compiler validator.Compiler) (*Config, error) {
 	configPath := filepath.Join(registryRootDir, JsmRegistryConfigFile)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return nil, &MissingConfigError{Path: registryRootDir}
 	}
 
+	//nolint:gosec // Path is constructed from internal registry logic
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
@@ -124,10 +134,12 @@ func New(registryRootDir string, compiler validator.Compiler) (*Config, error) {
 	return &config, nil
 }
 
+// ProductionEnvConfig returns the production environment configuration.
 func (c *Config) ProductionEnvConfig() *EnvConfig {
 	return c.Environments[c.ProductionEnv]
 }
 
+// EnvConfig returns the configuration for the given environment.
 func (c *Config) EnvConfig(env Env) (*EnvConfig, error) {
 	ec, ok := c.Environments[env]
 	if !ok {
@@ -136,6 +148,7 @@ func (c *Config) EnvConfig(env Env) (*EnvConfig, error) {
 	return ec, nil
 }
 
+// Validate validates the Config.
 func (c *Config) Validate(compiler validator.Compiler) error {
 	if c.DefaultJSONSchemaVersion == "" {
 		c.DefaultJSONSchemaVersion = validator.Draft7

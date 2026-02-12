@@ -1,4 +1,5 @@
-package fs
+// Package fsh provides filesystem utilities for JSM.
+package fsh
 
 import (
 	"os"

@@ -10,10 +10,11 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
 )
 
+// RootDirEnvVar is the environment variable used to set the registry root directory.
 const RootDirEnvVar = "JSM_REGISTRY_ROOT_DIR"
 
 // Registry is the object which represents a JSM Registry, and also stores the schemas in memory.
@@ -22,8 +23,8 @@ type Registry struct {
 	config        *config.Config
 	cache         Cache
 	compiler      validator.Compiler
-	pathResolver  fs.PathResolver
-	envProvider   fs.EnvProvider
+	pathResolver  fsh.PathResolver
+	envProvider   fsh.EnvProvider
 	mu            sync.RWMutex       // Protects cache
 	loadGroup     singleflight.Group // Prevents duplicate loads
 	renderGroup   singleflight.Group // Prevents duplicate renders/compilations
@@ -34,15 +35,15 @@ type Registry struct {
 func NewRegistry(
 	rootDirectory string,
 	compiler validator.Compiler,
-	pathResolver fs.PathResolver,
-	envProvider fs.EnvProvider,
+	pathResolver fsh.PathResolver,
+	envProvider fsh.EnvProvider,
 ) (*Registry, error) {
 	rd, err := initRootDirectory(rootDirectory, pathResolver, envProvider)
 	if err != nil {
 		return nil, err
 	}
 
-	config, err := config.New(rd, compiler)
+	cfg, err := config.New(rd, compiler)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +52,7 @@ func NewRegistry(
 		cache:         make(Cache),
 		compiler:      compiler,
 		rootDirectory: rd,
-		config:        config,
+		config:        cfg,
 		pathResolver:  pathResolver,
 		envProvider:   envProvider,
 	}, nil
@@ -60,7 +61,7 @@ func NewRegistry(
 // initRootDirectory attempts to initialise the registry root directory.
 // If rootDirectory is empty, it will attempt to find the root directory from
 // the environment variable JSM_REGISTRY_ROOT_DIR.
-func initRootDirectory(rd string, pathResolver fs.PathResolver, envProvider fs.EnvProvider) (string, error) {
+func initRootDirectory(rd string, pathResolver fsh.PathResolver, envProvider fsh.EnvProvider) (string, error) {
 	if rd == "" {
 		rd = envProvider.Get(RootDirEnvVar)
 	}

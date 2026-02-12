@@ -15,14 +15,17 @@ type Reporter interface {
 // It is used to collect test outcomes for a schema identified by Key.
 type TestLog map[Key][]Spec
 
+// NewTestLog creates a new TestLog.
 func NewTestLog() TestLog {
 	return make(TestLog)
 }
 
+// AddTest adds a test to the TestLog.
 func (l TestLog) AddTest(key Key, spec *Spec) {
 	l[key] = append(l[key], *spec)
 }
 
+// TestReport represents the results of a test run.
 type TestReport struct {
 	mu sync.Mutex
 
@@ -35,6 +38,7 @@ type TestReport struct {
 	PassedTests TestLog // tests that passed as expected - i.e a pass test that passed and a fail test that failed
 }
 
+// NewTestReport creates a new TestReport.
 func NewTestReport() *TestReport {
 	return &TestReport{
 		FailedTests: make(TestLog),
@@ -42,12 +46,14 @@ func NewTestReport() *TestReport {
 	}
 }
 
+// AddFailedTest adds a failed test to the report.
 func (r *TestReport) AddFailedTest(key Key, spec *Spec) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.FailedTests[key] = append(r.FailedTests[key], *spec)
 }
 
+// AddPassedTest adds a passed test to the report.
 func (r *TestReport) AddPassedTest(key Key, spec *Spec) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -135,7 +135,7 @@ func TestTester_TestSingleSchema(t *testing.T) {
 		tr := NewTester(r)
 		_, err := tr.TestSpecificDocument(context.Background(), k, testPath)
 		require.Error(t, err)
-		assert.IsType(t, &InvalidTestDocumentDirectoryError{}, err)
+		assert.ErrorAs(t, err, new(*InvalidTestDocumentDirectoryError))
 	})
 
 	t.Run("TestSpecificDocument - schema not found", func(t *testing.T) {
@@ -244,7 +244,7 @@ func TestTester_TestSingleSchema(t *testing.T) {
 		tr := NewTester(r)
 		_, err := tr.TestSpecificDocument(context.Background(), k, testPath)
 		require.Error(t, err)
-		assert.IsType(t, &InvalidTestDocumentDirectoryError{}, err)
+		assert.ErrorAs(t, err, new(*InvalidTestDocumentDirectoryError))
 	})
 }
 
@@ -316,7 +316,7 @@ func TestTester_testSchema_Errs(t *testing.T) {
 		s, _ := r.GetSchemaByKey(k)
 		// Restore valid schema but trigger an error in getSpecsForSchema by removing the home directory.
 		require.NoError(t, os.WriteFile(s.Path(FilePath), []byte(`{"type": "object"}`), 0o600))
-		os.RemoveAll(s.Path(HomeDir))
+		_ = os.RemoveAll(s.Path(HomeDir))
 		err := tr.testSchema(context.Background(), k)
 		require.Error(t, err)
 	})
@@ -399,7 +399,7 @@ func TestTester_GetSpecsErrs(t *testing.T) {
 	tr := NewTester(r)
 	_, err := tr.TestSingleSchema(context.Background(), k)
 	require.Error(t, err)
-	assert.IsType(t, InvalidTestDocumentError{}, err)
+	assert.ErrorAs(t, err, new(InvalidTestDocumentError))
 }
 
 func TestTester_TestFoundSchemas_StopOnErr(t *testing.T) {
@@ -541,7 +541,7 @@ func TestTester_TestFoundSchemas_SearchErr(t *testing.T) {
 	tr := NewTester(r)
 	_, err := tr.TestFoundSchemas(context.Background(), "domain")
 	require.Error(t, err)
-	assert.IsType(t, &InvalidSchemaFilenameError{}, err)
+	assert.ErrorAs(t, err, new(*InvalidSchemaFilenameError))
 }
 
 func TestTester_testSchema_ContextCancelled(t *testing.T) {
@@ -867,7 +867,7 @@ func TestNewTestScope(t *testing.T) {
 			got, err := NewTestScope(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.IsType(t, &InvalidTestScopeError{}, err)
+				assert.ErrorAs(t, err, new(*InvalidTestScopeError))
 				return
 			}
 			require.NoError(t, err)
@@ -905,7 +905,10 @@ func TestTester_ProviderCompatibility(t *testing.T) {
 		targetSchema, _ := r.GetSchemaByKey(targetKey)
 		require.NoError(t, os.MkdirAll(filepath.Join(targetSchema.Path(HomeDir), "pass"), 0o755))
 		require.NoError(t, os.MkdirAll(filepath.Join(targetSchema.Path(HomeDir), "fail"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(targetSchema.Path(HomeDir), "pass", "valid.json"), []byte(`{}`), 0o600))
+		require.NoError(
+			t,
+			os.WriteFile(filepath.Join(targetSchema.Path(HomeDir), "pass", "valid.json"), []byte(`{}`), 0o600),
+		)
 
 		earlierSchema, _ := r.GetSchemaByKey(earlierKey)
 		require.NoError(t, os.MkdirAll(filepath.Join(earlierSchema.Path(HomeDir), "pass"), 0o755))
@@ -1305,6 +1308,6 @@ func TestTester_testSchemaCompatibleWithEarlierVersions_ErrorPaths(t *testing.T)
 
 		err := tr.testSchemaCompatibleWithEarlierVersions(context.Background(), k)
 		require.Error(t, err)
-		assert.IsType(t, &InvalidJSONError{}, err)
+		assert.ErrorAs(t, err, new(*InvalidJSONError))
 	})
 }

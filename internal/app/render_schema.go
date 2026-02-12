@@ -9,6 +9,9 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
+// NewRenderSchemaCmd returns a new cobra command for rendering a schema.
+//
+//nolint:gocognit // high complexity command setup
 func NewRenderSchemaCmd(mgr Manager) *cobra.Command {
 	var keyStr string
 	var idStr string
@@ -58,7 +61,7 @@ func NewRenderSchemaCmd(mgr Manager) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), string(rendered))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(rendered))
 			return nil
 		},
 	}

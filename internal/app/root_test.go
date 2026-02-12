@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
@@ -20,8 +20,8 @@ func TestRootCmd(t *testing.T) {
 		mgr := &MockManager{registry: &schema.Registry{}}
 		lazy := &LazyManager{inner: mgr}
 		logLevel := &slog.LevelVar{}
-		var stderr bytes.Buffer
-		rootCmd := NewRootCmd(lazy, logLevel, &stderr, fs.NewEnvProvider())
+		var stdout, stderr bytes.Buffer
+		rootCmd := NewRootCmd(lazy, logLevel, &stdout, &stderr, fsh.NewEnvProvider())
 		return logLevel, rootCmd
 	}
 
@@ -72,8 +72,8 @@ func TestRootCmd(t *testing.T) {
 		t.Parallel()
 		lazy := &LazyManager{} // Empty lazy manager, no inner manager
 		logLevel := &slog.LevelVar{}
-		var stderr bytes.Buffer
-		rootCmd := NewRootCmd(lazy, logLevel, &stderr, fs.NewEnvProvider())
+		var stdout, stderr bytes.Buffer
+		rootCmd := NewRootCmd(lazy, logLevel, &stdout, &stderr, fsh.NewEnvProvider())
 
 		rootCmd.SetArgs([]string{"completion", "zsh"})
 		// This should not fail even though registryPath is empty and lazy has no inner,
@@ -89,6 +89,7 @@ func TestRootCmd(t *testing.T) {
 		variants := []string{"--nocolor", "--noColor", "--noColour"}
 		for _, variant := range variants {
 			t.Run(variant, func(t *testing.T) {
+				t.Parallel()
 				_, rootCmd := setup()
 				// Use help to avoid registry init, but include the flag
 				// flags are processed before PersistentPreRunE

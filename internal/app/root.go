@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 	"github.com/andyballingall/json-schema-manager/internal/repo"
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 	"github.com/andyballingall/json-schema-manager/internal/validator"
@@ -17,6 +16,7 @@ import (
 // Version is the current version of jsm, set at build time.
 var Version = "dev"
 
+// CreateRegistryCmdName is the name of the command to create a new registry.
 const CreateRegistryCmdName = "create-registry"
 
 // Banner with colour codes and escaped backticks.
@@ -41,6 +41,7 @@ var Banner = "\033[32m" + `
                          /____/             
 ` + "\033[0m"
 
+// LongDescription is the long description of the application.
 var LongDescription = `
 jsm is a CLI tool for developing and testing JSON Schemas which act as bulletproof
 data contracts between services in an organisation. 
@@ -49,7 +50,14 @@ changes in data contracts will not break existing services.
 `
 
 // NewRootCmd creates the root command and wires up dependencies.
-func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer, envProvider fs.EnvProvider) *cobra.Command {
+//
+//nolint:gocognit // high complexity command setup
+func NewRootCmd(
+	lazy *LazyManager,
+	ll *slog.LevelVar,
+	stdout, stderr io.Writer,
+	envProvider fsh.EnvProvider,
+) *cobra.Command {
 	var debug bool
 	var noColour bool
 	var registryPath string
@@ -81,7 +89,7 @@ func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer, envProvi
 
 			// 2. Build Dependencies
 			compiler := validator.NewSanthoshCompiler()
-			pathResolver := fs.NewPathResolver()
+			pathResolver := fsh.NewPathResolver()
 
 			registry, err := schema.NewRegistry(registryPath, compiler, pathResolver, envProvider)
 			if err != nil {
@@ -96,13 +104,13 @@ func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer, envProvi
 			tester := schema.NewTester(registry)
 			cfg, _ := registry.Config()
 			gitter := repo.NewCLIGitter(cfg, pathResolver, "")
-			distBuilder, err := schema.NewFSDistBuilder(registry, cfg, gitter, "dist")
+			distBuilder, err := schema.NewFSDistBuilder(cmd.Context(), registry, cfg, gitter, "dist")
 			if err != nil {
 				return fmt.Errorf("failed to initialise distribution builder: %w", err)
 			}
 
 			// 3. Hydrate the Lazy Wrapper
-			realMgr := NewCLIManager(logger, registry, tester, gitter, distBuilder, os.Stdout)
+			realMgr := NewCLIManager(logger, registry, tester, gitter, distBuilder, stdout)
 			lazy.SetInner(realMgr)
 
 			return nil
@@ -126,7 +134,7 @@ func NewRootCmd(lazy *LazyManager, ll *slog.LevelVar, stderr io.Writer, envProvi
 	_ = rootCmd.PersistentFlags().MarkHidden("noColour")
 
 	// Subcommands
-	pathResolver := fs.NewPathResolver()
+	pathResolver := fsh.NewPathResolver()
 	rootCmd.AddCommand(NewCreateRegistryCmd(pathResolver))
 	rootCmd.AddCommand(NewValidateCmd(lazy))
 	rootCmd.AddCommand(NewCreateSchemaCmd(lazy))

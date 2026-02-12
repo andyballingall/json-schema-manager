@@ -1,4 +1,4 @@
-package fs
+package fsh_test
 
 import (
 	"os"
@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 func TestCanonicalPath(t *testing.T) {
@@ -18,7 +20,7 @@ func TestCanonicalPath(t *testing.T) {
 		path := filepath.Join(dir, "test")
 		require.NoError(t, os.Mkdir(path, 0o755))
 
-		canonical, err := CanonicalPath(path)
+		canonical, err := fsh.CanonicalPath(path)
 		require.NoError(t, err)
 		assert.True(t, filepath.IsAbs(canonical))
 		assert.Contains(t, canonical, "test")
@@ -33,7 +35,7 @@ func TestCanonicalPath(t *testing.T) {
 		link := filepath.Join(dir, "link")
 		require.NoError(t, os.Symlink(target, link))
 
-		canonical, err := CanonicalPath(link)
+		canonical, err := fsh.CanonicalPath(link)
 		require.NoError(t, err)
 
 		expected, _ := filepath.EvalSymlinks(target)
@@ -45,7 +47,7 @@ func TestCanonicalPath(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "non-existent")
 
-		_, err := CanonicalPath(path)
+		_, err := fsh.CanonicalPath(path)
 		require.Error(t, err)
 		assert.True(t, os.IsNotExist(err))
 	})
@@ -56,7 +58,7 @@ func TestAbs(t *testing.T) {
 
 	t.Run("returns absolute path", func(t *testing.T) {
 		t.Parallel()
-		abs, err := Abs("relative/path")
+		abs, err := fsh.Abs("relative/path")
 		require.NoError(t, err)
 		assert.True(t, filepath.IsAbs(abs))
 	})

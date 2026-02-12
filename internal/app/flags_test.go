@@ -37,7 +37,7 @@ func TestPathValue(t *testing.T) {
 	t.Parallel()
 
 	p := pathValue("")
-	assert.Equal(t, "", p.String())
+	assert.Empty(t, p.String())
 	assert.Equal(t, "<path>", p.Type())
 
 	t.Run("set value", func(t *testing.T) {

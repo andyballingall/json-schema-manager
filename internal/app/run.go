@@ -7,10 +7,11 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
-func Run(ctx context.Context, args []string, stdout, stderr io.Writer, envProvider fs.EnvProvider) error {
+// Run executes the application with the given arguments.
+func Run(ctx context.Context, args []string, stdout, stderr io.Writer, envProvider fsh.EnvProvider) error {
 	logLevel := &slog.LevelVar{}
 	logLevel.Set(slog.LevelInfo)
 
@@ -18,21 +19,21 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, envProvid
 	lazy := &LazyManager{}
 
 	if envProvider == nil {
-		envProvider = fs.NewEnvProvider()
+		envProvider = fsh.NewEnvProvider()
 	}
 
-	rootCmd := NewRootCmd(lazy, logLevel, stderr, envProvider)
+	rootCmd := NewRootCmd(lazy, logLevel, stdout, stderr, envProvider)
 	rootCmd.SetArgs(args[1:]) // Skip the program name
 	rootCmd.SetOut(stdout)
 	rootCmd.SetErr(stderr)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {
-			fmt.Fprintln(stderr, "Interrupted by user")
+			_, _ = fmt.Fprintln(stderr, "Interrupted by user")
 			return nil
 		}
 		// Print error to stderr for script tests and CLI users (SilenceErrors is set)
-		fmt.Fprintf(stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error: %v\n", err)
 		return err
 	}
 

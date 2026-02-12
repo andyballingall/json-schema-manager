@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"context"
+
 	"github.com/andyballingall/json-schema-manager/internal/config"
 )
 
@@ -22,11 +24,11 @@ type Change struct {
 type Gitter interface {
 	// GetLatestAnchor finds the latest deployment tag for an environment.
 	// If no tag is found, it returns the repository's initial commit.
-	GetLatestAnchor(env config.Env) (Revision, error)
+	GetLatestAnchor(ctx context.Context, env config.Env) (Revision, error)
 
 	// TagDeploymentSuccess creates and pushes a new environment-specific deployment tag.
-	TagDeploymentSuccess(env config.Env) (string, error)
+	TagDeploymentSuccess(ctx context.Context, env config.Env) (string, error)
 
 	// GetSchemaChanges identifies files with the given suffix changed between the anchor and HEAD.
-	GetSchemaChanges(anchor Revision, sourceDir, suffix string) ([]Change, error)
+	GetSchemaChanges(ctx context.Context, anchor Revision, sourceDir, suffix string) ([]Change, error)
 }

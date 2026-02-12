@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,19 +13,27 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fs"
+	"github.com/andyballingall/json-schema-manager/internal/fsh"
 )
 
 func TestNewCreateRegistryCmd(t *testing.T) {
 	t.Parallel()
+
+	setup := func(t *testing.T) *cobra.Command {
+		t.Helper()
+		pathResolver := fsh.NewPathResolver()
+		cmd := NewCreateRegistryCmd(pathResolver)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		return cmd
+	}
 
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 		registryDir := filepath.Join(tmpDir, "my-registry")
 
-		pathResolver := fs.NewPathResolver()
-		cmd := NewCreateRegistryCmd(pathResolver)
+		cmd := setup(t)
 		cmd.SetArgs([]string{registryDir})
 
 		err := cmd.Execute()
@@ -49,8 +58,7 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 		err := os.WriteFile(configPath, []byte("existing"), 0o600)
 		require.NoError(t, err)
 
-		pathResolver := fs.NewPathResolver()
-		cmd := NewCreateRegistryCmd(pathResolver)
+		cmd := setup(t)
 		cmd.SetArgs([]string{tmpDir})
 
 		err = cmd.Execute()
@@ -70,8 +78,7 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 
 		badDir := filepath.Join(filePath, "nested")
 
-		pathResolver := fs.NewPathResolver()
-		cmd := NewCreateRegistryCmd(pathResolver)
+		cmd := setup(t)
 		cmd.SetArgs([]string{badDir})
 
 		err = cmd.Execute()
@@ -81,8 +88,7 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 
 	t.Run("error - missing argument", func(t *testing.T) {
 		t.Parallel()
-		pathResolver := fs.NewPathResolver()
-		cmd := NewCreateRegistryCmd(pathResolver)
+		cmd := setup(t)
 		cmd.SetArgs([]string{})
 
 		// Cobra will handle this and return an error before RunE
@@ -102,8 +108,7 @@ func TestNewCreateRegistryCmd(t *testing.T) {
 			_ = os.Chmod(registryDir, 0o755)
 		}()
 
-		pathResolver := fs.NewPathResolver()
-		cmd := NewCreateRegistryCmd(pathResolver)
+		cmd := setup(t)
 		cmd.SetArgs([]string{registryDir})
 
 		err = cmd.Execute()
@@ -117,7 +122,7 @@ func TestRootCmd_CreateRegistryRegistration(t *testing.T) {
 	t.Parallel()
 	lazy := &LazyManager{}
 	ll := &slog.LevelVar{}
-	rootCmd := NewRootCmd(lazy, ll, os.Stderr, fs.NewEnvProvider())
+	rootCmd := NewRootCmd(lazy, ll, os.Stdout, os.Stderr, fsh.NewEnvProvider())
 
 	found := false
 	for _, cmd := range rootCmd.Commands() {
@@ -134,7 +139,7 @@ func TestPersistentPreRunE_CreateRegistry_SkipsInitialisation(t *testing.T) {
 	t.Parallel()
 	lazy := &LazyManager{}
 	ll := &slog.LevelVar{}
-	rootCmd := NewRootCmd(lazy, ll, os.Stderr, fs.NewEnvProvider())
+	rootCmd := NewRootCmd(lazy, ll, os.Stdout, os.Stderr, fsh.NewEnvProvider())
 
 	// Find the create-registry command
 	var createRegistryCmd *cobra.Command
@@ -159,7 +164,7 @@ func TestPersistentPreRunE_CreateRegistry_SkipsInitialisation(t *testing.T) {
 func TestAddEnvironmentVariableInstructionsForOS(t *testing.T) {
 	t.Parallel()
 	dir := "/tmp/bg-registry"
-	pathResolver := fs.NewPathResolver()
+	pathResolver := fsh.NewPathResolver()
 
 	t.Run("windows", func(t *testing.T) {
 		t.Parallel()
@@ -200,7 +205,7 @@ func TestAddEnvironmentVariableInstructionsForOS(t *testing.T) {
 	})
 }
 
-// mockPathResolver is a test implementation of fs.PathResolver.
+// mockPathResolver is a test implementation of fsh.PathResolver.
 type mockPathResolver struct {
 	canonicalPathFn       func(path string) (string, error)
 	absFn                 func(path string) (string, error)
@@ -211,7 +216,7 @@ func (m *mockPathResolver) CanonicalPath(path string) (string, error) {
 	if m.canonicalPathFn != nil {
 		return m.canonicalPathFn(path)
 	}
-	return fs.NewPathResolver().CanonicalPath(path)
+	return fsh.NewPathResolver().CanonicalPath(path)
 }
 
 func (m *mockPathResolver) Abs(path string) (string, error) {
@@ -225,5 +230,5 @@ func (m *mockPathResolver) GetUintSubdirectories(dirPath string) ([]uint64, erro
 	if m.getUintSubdirectories != nil {
 		return m.getUintSubdirectories(dirPath)
 	}
-	return fs.GetUintSubdirectories(dirPath)
+	return fsh.GetUintSubdirectories(dirPath)
 }

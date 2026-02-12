@@ -34,22 +34,20 @@ func NewTestScope(s string) (TestScope, error) {
 }
 
 const (
-	// For each schema in the test, just use the schema's local test documents in its home directory - includes tests
-	// in the 'pass' directory - which should validate, and tests in the 'fail' directory - which should NOT validate.
+	// TestScopeLocal selects a schema's local test documents (in the pass and fail folders next it).
 	TestScopeLocal TestScope = "local"
 
-	// For each schema in the test, just use the schema's local pass test documents in its home directory.
+	// TestScopePass selects a schema's local passing test documents (in the pass folder next to it).
 	TestScopePass TestScope = "pass-only"
 
-	// For each schema in the test, just use the schema's local fail test documents in its home directory.
+	// TestScopeFail selects a schema's local failing test documents (in the fail folder next to it).
 	TestScopeFail TestScope = "fail-only"
 
-	// For each schema in the test, identify all pass tests for LATER versions of the schema in the family
-	// which share the SAME major version (to check whether supposed non-breaking changes in later versions
-	// are actually breaking).
+	// TestScopeConsumerBreaking selects passing test documents for LATER versions of the schema sharing the same
+	// major version. This identifies whether supposedly later 'non-breaking' changes actually are breaking.
 	TestScopeConsumerBreaking TestScope = "consumer-breaking"
 
-	// For each schema in the test, identify all relevant tests to run.
+	// TestScopeAll means for each schema in the test, identify all relevant tests to run.
 	// This combines TestScopeLocal and TestScopeConsumerBreaking.
 	TestScopeAll TestScope = "all"
 )
@@ -203,38 +201,10 @@ func (t *Tester) TestFoundSchemas(ctx context.Context, ss SearchScope) (*TestRep
 	var finalErr error
 	var errOnce sync.Once
 
-Loop:
 	for res := range resultC {
-		// Handle filesystem traversal errors
-		if res.Err != nil {
-			errOnce.Do(func() {
-				finalErr = res.Err
-				cancelRun()
-			})
-			break Loop
+		if stop := t.processSearchResult(runCtx, res, &wg, sem, &errOnce, &finalErr, cancelRun); stop {
+			break
 		}
-
-		// Before acquiring a worker slot, check if we've been told to stop
-		select {
-		case <-runCtx.Done():
-			break Loop
-		case sem <- struct{}{}: // Acquire worker slot
-		}
-
-		wg.Add(1)
-		go func(k Key) {
-			defer wg.Done()
-			defer func() { <-sem }() // Release slot when finished
-
-			if tErr := t.testSchema(runCtx, k); tErr != nil {
-				errOnce.Do(func() {
-					if !errors.Is(tErr, ErrStopTesting) {
-						finalErr = tErr
-					}
-					cancelRun() // Signal producer and other workers to stop
-				})
-			}
-		}(res.Key)
 	}
 
 	// Wait for all workers currently in flight to finish
@@ -245,11 +215,50 @@ Loop:
 		return t.report, ctx.Err()
 	}
 
-	if finalErr != nil {
-		return t.report, finalErr
+	return t.report, finalErr
+}
+
+func (t *Tester) processSearchResult(
+	ctx context.Context,
+	res SearchResult,
+	wg *sync.WaitGroup,
+	sem chan struct{},
+	errOnce *sync.Once,
+	//nolint:gocritic // finalErr updated via pointer
+	finalErr *error,
+	cancelFunc context.CancelFunc,
+) bool {
+	if res.Err != nil {
+		errOnce.Do(func() {
+			*finalErr = res.Err
+			cancelFunc()
+		})
+		return true
 	}
 
-	return t.report, nil
+	// Before acquiring a worker slot, check if we've been told to stop
+	select {
+	case <-ctx.Done():
+		return true
+	case sem <- struct{}{}: // Acquire worker slot
+	}
+
+	wg.Add(1)
+	go func(k Key) {
+		defer wg.Done()
+		defer func() { <-sem }() // Release slot when finished
+
+		if tErr := t.testSchema(ctx, k); tErr != nil {
+			errOnce.Do(func() {
+				if !errors.Is(tErr, ErrStopTesting) {
+					*finalErr = tErr
+				}
+				cancelFunc() // Signal producer and other workers to stop
+			})
+		}
+	}(res.Key)
+
+	return false
 }
 
 // testSchema identifies the specs to run for the given schema, and executes them.
@@ -398,29 +407,29 @@ func (t *Tester) testSchemaCompatibleWithEarlierVersions(ctx context.Context, ta
 		return err
 	}
 
-	// Get the target schema's pass test documents
 	passTests, err := targetSchema.TestDocuments(TestDocTypePass)
 	if err != nil {
 		return err
 	}
 
-	// No pass tests means nothing to check
-	if len(passTests) == 0 {
-		return nil
-	}
-
-	// Find earlier schemas to test against
 	earlierKeys, err := targetSchema.MajorFamilyEarlierSchemas()
 	if err != nil {
 		return err
 	}
 
-	// No earlier schemas means nothing to check
-	if len(earlierKeys) == 0 {
+	if len(passTests) == 0 || len(earlierKeys) == 0 {
 		return nil
 	}
 
-	// Create a sub-context to allow us to cancel workers early
+	return t.runCompatibilityTests(ctx, targetSchema, passTests, earlierKeys)
+}
+
+func (t *Tester) runCompatibilityTests(
+	ctx context.Context,
+	targetSchema *Schema,
+	passTests []TestInfo,
+	earlierKeys []Key,
+) error {
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
 
@@ -430,41 +439,56 @@ func (t *Tester) testSchemaCompatibleWithEarlierVersions(ctx context.Context, ta
 	var finalErr error
 	var errOnce sync.Once
 
-	// For each earlier schema, run the target's pass tests against it
-Loop:
 	for _, earlierKey := range earlierKeys {
-		// Check if we've been told to stop
-		select {
-		case <-runCtx.Done():
-			break Loop
-		case sem <- struct{}{}: // Acquire worker slot
+		if stop := t.processCompatibilityTest(runCtx, earlierKey, targetSchema, passTests, &wg, sem, &errOnce,
+			&finalErr, cancelRun); stop {
+			break
 		}
-
-		wg.Add(1)
-		go func(ek Key) {
-			defer wg.Done()
-			defer func() { <-sem }() // Release slot when finished
-
-			if tErr := t.testEarlierSchemaWithTargetTests(runCtx, ek, targetSchema, passTests); tErr != nil {
-				errOnce.Do(func() {
-					if !errors.Is(tErr, ErrStopTesting) {
-						finalErr = tErr
-					}
-					cancelRun() // Signal other workers to stop
-				})
-			}
-		}(earlierKey)
 	}
 
-	// Wait for all workers to finish
 	wg.Wait()
 
-	// If ctx was cancelled by the caller, prioritise returning that error.
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	return finalErr
+}
+
+func (t *Tester) processCompatibilityTest(
+	ctx context.Context,
+	earlierKey Key,
+	targetSchema *Schema,
+	passTests []TestInfo,
+	wg *sync.WaitGroup,
+	sem chan struct{},
+	errOnce *sync.Once,
+	//nolint:gocritic // finalErr updated via pointer
+	finalErr *error,
+	cancelFunc context.CancelFunc,
+) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case sem <- struct{}{}: // Acquire worker slot
+	}
+
+	wg.Add(1)
+	go func(ek Key) {
+		defer wg.Done()
+		defer func() { <-sem }()
+
+		if tErr := t.testEarlierSchemaWithTargetTests(ctx, ek, targetSchema, passTests); tErr != nil {
+			errOnce.Do(func() {
+				if !errors.Is(tErr, ErrStopTesting) {
+					*finalErr = tErr
+				}
+				cancelFunc()
+			})
+		}
+	}(earlierKey)
+
+	return false
 }
 
 // testEarlierSchemaWithTargetTests runs the target schema's pass tests against an earlier schema.

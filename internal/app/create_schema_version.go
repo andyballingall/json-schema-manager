@@ -8,6 +8,9 @@ import (
 	"github.com/andyballingall/json-schema-manager/internal/schema"
 )
 
+// NewCreateSchemaVersionCmd returns a new cobra command for creating a schema version.
+//
+//nolint:gocognit // high complexity command setup
 func NewCreateSchemaVersionCmd(mgr Manager) *cobra.Command {
 	var verbose bool
 	var keyStr string

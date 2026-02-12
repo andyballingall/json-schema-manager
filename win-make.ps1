@@ -1,6 +1,6 @@
 param (
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("build", "run", "clean", "test", "test-race", "test-cover", "check-coverage", "cover-html", "lint", "fmt", "snapshot", "release-check", "setup")]
+    [ValidateSet("build", "run", "clean", "test", "test-race", "test-cover", "test-race-coverage", "cover-html", "lint", "fmt", "snapshot", "release-check", "setup")]
     [string]$Target
 )
 
@@ -42,8 +42,8 @@ switch ($Target) {
     "test-cover" {
         Invoke-GoTest @("--summary", "-count=1")
     }
-    "check-coverage" {
-        Invoke-GoTest @("--check-coverage", "-count=1")
+    "test-race-coverage" {
+        Invoke-GoTest @("--test-race-coverage", "-count=1")
     }
     "cover-html" {
         Invoke-GoTest @("--browser", "-count=1")

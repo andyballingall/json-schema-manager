@@ -1,7 +1,9 @@
+// Package main provides a script to run tests and check coverage.
 package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,77 +12,101 @@ import (
 
 func main() {
 	args := os.Args[1:]
+	testArgs, cfg := parseFlags(args)
 
-	// Separate custom script flags from go test flags
-	var testArgs []string
-	checkCoverage := false
-	showSummary := false
-	openBrowser := false
-	generateBadge := false
-	coverageFile := ""
-
-	for _, arg := range args {
-		switch {
-		case arg == "--check-coverage":
-			checkCoverage = true
-		case arg == "--summary":
-			showSummary = true
-		case arg == "--browser":
-			openBrowser = true
-		case arg == "--badge":
-			generateBadge = true
-		case strings.HasPrefix(arg, "-coverprofile="):
-			coverageFile = strings.TrimPrefix(arg, "-coverprofile=")
-			testArgs = append(testArgs, arg)
-		default:
-			testArgs = append(testArgs, arg)
-		}
-	}
-
-	// Any coverage-related flag triggers the coverage setup
-	isCoverageRun := checkCoverage || showSummary || openBrowser || generateBadge
-
-	if isCoverageRun {
-		if coverageFile == "" {
-			coverageFile = "coverage.out"
-			testArgs = append(testArgs, "-coverprofile="+coverageFile)
-		}
-		// Ensure we are covering the internal packages
-		hasCoverPkg := false
-		for _, arg := range testArgs {
-			if strings.HasPrefix(arg, "-coverpkg") {
-				hasCoverPkg = true
-				break
-			}
-		}
-		if !hasCoverPkg {
-			testArgs = append(testArgs, "-coverpkg=./internal/...")
-		}
+	if cfg.isCoverageRun() {
+		testArgs = setupCoverage(testArgs, cfg)
 	}
 
 	// Run tests
 	_, err := exec.LookPath("gotestsum")
-	if err == nil && !isCoverageRun {
+	if err == nil && !cfg.isCoverageRun() {
 		runCommand("gotestsum", append([]string{"--"}, testArgs...))
 	} else {
 		runCommand("go", append([]string{"test"}, testArgs...))
 	}
 
 	// Post-test actions
+	handlePostTest(cfg)
+}
+
+type testerConfig struct {
+	checkCoverage bool
+	showSummary   bool
+	openBrowser   bool
+	generateBadge bool
+	coverageFile  string
+}
+
+func (c *testerConfig) isCoverageRun() bool {
+	return c.checkCoverage || c.showSummary || c.openBrowser || c.generateBadge
+}
+
+func parseFlags(args []string) ([]string, *testerConfig) {
+	var testArgs []string
+	cfg := &testerConfig{}
+
+	for _, arg := range args {
+		switch {
+		case arg == "--test-race-coverage":
+			cfg.checkCoverage = true
+		case arg == "--summary":
+			cfg.showSummary = true
+		case arg == "--browser":
+			cfg.openBrowser = true
+		case arg == "--badge":
+			cfg.generateBadge = true
+		case strings.HasPrefix(arg, "-coverprofile="):
+			cfg.coverageFile = strings.TrimPrefix(arg, "-coverprofile=")
+			testArgs = append(testArgs, arg)
+		default:
+			testArgs = append(testArgs, arg)
+		}
+	}
+	return testArgs, cfg
+}
+
+func setupCoverage(testArgs []string, cfg *testerConfig) []string {
+	if cfg.coverageFile == "" {
+		cfg.coverageFile = "coverage.out"
+		testArgs = append(testArgs, "-coverprofile="+cfg.coverageFile)
+	}
+	// Ensure we are covering the internal packages
+	hasCoverPkg := false
+	for _, arg := range testArgs {
+		if strings.HasPrefix(arg, "-coverpkg") {
+			hasCoverPkg = true
+			break
+		}
+	}
+	if !hasCoverPkg {
+		testArgs = append(testArgs, "-coverpkg=./internal/...")
+	}
+	return testArgs
+}
+
+func handlePostTest(cfg *testerConfig) {
 	switch {
-	case checkCoverage:
-		checkCoverageThresholds(coverageFile)
-	case showSummary:
-		runCommand("go", []string{"tool", "cover", "-func", coverageFile})
-	case openBrowser:
-		runCommand("go", []string{"tool", "cover", "-html", coverageFile})
-	case generateBadge:
-		generateCoverageBadge(coverageFile)
+	case cfg.checkCoverage:
+		checkCoverageThresholds(cfg.coverageFile)
+	case cfg.showSummary:
+		runCommand("go", []string{"tool", "cover", "-func", cfg.coverageFile})
+	case cfg.openBrowser:
+		runCommand("go", []string{"tool", "cover", "-html", cfg.coverageFile})
+	case cfg.generateBadge:
+		generateCoverageBadge(cfg.coverageFile)
 	}
 }
 
 func runCommand(name string, args []string) {
-	cmd := exec.Command(name, args...)
+	cmd := exec.CommandContext(context.Background(), name, args...)
+	// Clear Git environment variables to avoid conflicts with lefthook
+	cmd.Env = os.Environ()
+	for i := len(cmd.Env) - 1; i >= 0; i-- {
+		if strings.HasPrefix(cmd.Env[i], "GIT_") {
+			cmd.Env = append(cmd.Env[:i], cmd.Env[i+1:]...)
+		}
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -90,7 +116,7 @@ func runCommand(name string, args []string) {
 }
 
 func checkCoverageThresholds(coverageFile string) {
-	cmd := exec.Command("go", "tool", "cover", "-func", coverageFile)
+	cmd := exec.CommandContext(context.Background(), "go", "tool", "cover", "-func", coverageFile)
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("❌ Error running go tool cover: %v\n", err)
@@ -115,7 +141,7 @@ func checkCoverageThresholds(coverageFile string) {
 }
 
 func generateCoverageBadge(coverageFile string) {
-	cmd := exec.Command("go", "tool", "cover", "-func", coverageFile)
+	cmd := exec.CommandContext(context.Background(), "go", "tool", "cover", "-func", coverageFile)
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("❌ Error running go tool cover: %v\n", err)
@@ -132,23 +158,24 @@ func generateCoverageBadge(coverageFile string) {
 	percentageStr := parts[len(parts)-1] // e.g. "99.8%"
 
 	var percentage float64
-	if _, err := fmt.Sscanf(strings.TrimSuffix(percentageStr, "%"), "%f", &percentage); err != nil {
-		fmt.Printf("❌ Error parsing coverage percentage: %v\n", err)
+	if _, scanErr := fmt.Sscanf(strings.TrimSuffix(percentageStr, "%"), "%f", &percentage); scanErr != nil {
+		fmt.Printf("❌ Error parsing coverage percentage: %v\n", scanErr)
 		os.Exit(1)
 	}
 
-	color := "#e05d44" // red
+	colour := "#e05d44" // red
 	switch {
 	case percentage >= 100:
-		color = "#4c1" // green
+		colour = "#4c1" // green
 	case percentage >= 90:
-		color = "#a4a61d" // yellowgreen
+		colour = "#a4a61d" // yellowgreen
 	case percentage >= 80:
-		color = "#dfb317" // yellow
+		colour = "#dfb317" // yellow
 	case percentage >= 70:
-		color = "#fe7d37" // orange
+		colour = "#fe7d37" // orange
 	}
 
+	//nolint:misspell // SVG uses stop-color
 	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="104" height="20">
   <linearGradient id="b" x2="0" y2="100%%">
     <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
@@ -166,7 +193,7 @@ func generateCoverageBadge(coverageFile string) {
     <text x="84.5" y="15" fill="#010101" fill-opacity=".3">%s</text>
     <text x="84.5" y="14">%s</text>
   </g>
-</svg>`, color, percentageStr, percentageStr)
+</svg>`, colour, percentageStr, percentageStr)
 
 	err = os.WriteFile("coverage.svg", []byte(svg), 0o600)
 	if err != nil {
@@ -180,7 +207,7 @@ func parseCoverageOutput(output []byte) (failures []string, totalLine string) {
 	// Function-level exclusions (Package:Function)
 	exclusions := map[string]float64{
 		// filepath.Abs() error path is unreachable on Darwin
-		"github.com/andyballingall/json-schema-manager/internal/fs/path_resolver.go:27": 85.0,
+		"github.com/andyballingall/json-schema-manager/internal/fsh/path_resolver.go:27": 75.0,
 		// os.IsNotExist(err) false path is hard to trigger reliably
 		"github.com/andyballingall/json-schema-manager/internal/schema/registry.go:131": 90.0,
 		// break Loop branch inside select is race-prone item to test
