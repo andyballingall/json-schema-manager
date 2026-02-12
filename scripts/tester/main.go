@@ -208,18 +208,6 @@ func parseCoverageOutput(output []byte) (failures []string, totalLine string) {
 	exclusions := map[string]float64{
 		// filepath.Abs() error path is unreachable on Darwin
 		"github.com/andyballingall/json-schema-manager/internal/fsh/path_resolver.go:27": 75.0,
-		// os.IsNotExist(err) false path is hard to trigger reliably
-		"github.com/andyballingall/json-schema-manager/internal/schema/registry.go:131": 90.0,
-		// break Loop branch inside select is race-prone item to test
-		"github.com/andyballingall/json-schema-manager/internal/schema/tester.go:346": 94.0,
-		// singleflight double-check cache path is non-deterministic due to goroutine scheduling
-		"github.com/andyballingall/json-schema-manager/internal/schema/registry.go:151": 90.0,
-		// WatchValidation callback execution depends on file system event timing
-		"github.com/andyballingall/json-schema-manager/internal/app/manager.go:193": 97.0,
-		// TextReporter.Write coverage depends on WatchValidation callback timing
-		"github.com/andyballingall/json-schema-manager/internal/report/text.go:38": 98.0,
-		// BuildAll parallel error handling is hard to trigger reliably
-		"github.com/andyballingall/json-schema-manager/internal/schema/dist.go:65": 97.0,
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))

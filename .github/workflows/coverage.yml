@@ -23,7 +23,7 @@ jobs:
 
             - name: Generate Badge
               run: |
-                  make setup
+                  make setup-coverage
                   make test-badge
 
             - name: Update Wiki

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,15 +11,13 @@ import (
 	"runtime"
 )
 
+var workflowFlag = flag.String("workflow", "local", "Workflow: local, ci, or coverage")
+
 func main() {
-	tools := map[string]string{
-		"lefthook":      "github.com/evilmartians/lefthook@latest",
-		"golangci-lint": "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0",
-		"goreleaser":    "github.com/goreleaser/goreleaser/v2@latest",
-		"staticcheck":   "honnef.co/go/tools/cmd/staticcheck@latest",
-		"gotestsum":     "gotest.tools/gotestsum@latest",
-		"gofumpt":       "mvdan.cc/gofumpt@latest",
-	}
+	flag.Parse()
+
+	workflow := *workflowFlag
+	tools := getToolsForWorkflow(workflow)
 
 	for tool, path := range tools {
 		if !isToolInstalled(tool) {
@@ -33,11 +32,40 @@ func main() {
 		}
 	}
 
-	_, _ = fmt.Println("🚀 Installing lefthook hooks...")
-	if err := runCommand("lefthook", "install"); err != nil {
-		_, _ = fmt.Printf("❌ Failed to install lefthook hooks: %v\n", err)
-	} else {
-		_, _ = fmt.Println("✅ Lefthook hooks installed!")
+	if workflow == "local" {
+		_, _ = fmt.Println("🚀 Installing lefthook hooks...")
+		if err := runCommand("lefthook", "install"); err != nil {
+			_, _ = fmt.Printf("❌ Failed to install lefthook hooks: %v\n", err)
+		} else {
+			_, _ = fmt.Println("✅ Lefthook hooks installed!")
+		}
+	}
+}
+
+func getToolsForWorkflow(workflow string) map[string]string {
+	allTools := map[string]string{
+		"lefthook":      "github.com/evilmartians/lefthook@v1.7.1",
+		"golangci-lint": "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0",
+		"goreleaser":    "github.com/goreleaser/goreleaser/v2@v2.3.0",
+		"staticcheck":   "honnef.co/go/tools/cmd/staticcheck@2023.1.7",
+		"gotestsum":     "gotest.tools/gotestsum@v1.12.0",
+		"gofumpt":       "mvdan.cc/gofumpt@v0.7.0",
+	}
+
+	switch workflow {
+	case "ci":
+		return map[string]string{
+			"golangci-lint": allTools["golangci-lint"],
+			"staticcheck":   allTools["staticcheck"],
+			"gotestsum":     allTools["gotestsum"],
+			"gofumpt":       allTools["gofumpt"],
+		}
+	case "coverage":
+		return map[string]string{
+			"gotestsum": allTools["gotestsum"],
+		}
+	default:
+		return allTools
 	}
 }
 

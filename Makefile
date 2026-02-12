@@ -1,4 +1,4 @@
-.PHONY: all build run clean test test-race test-cover test-race-coverage cover-html lint fmt snapshot release-check setup
+.PHONY: all build run clean test test-race test-cover test-race-coverage cover-html lint fmt snapshot release-check setup setup-ci setup-coverage
 
 all: build
 
@@ -59,3 +59,11 @@ release-check:
 # Setup development environment
 setup:
 	@go run scripts/setup/main.go
+
+# Setup for CI - skips lefthook installation
+setup-ci:
+	@go run scripts/setup/main.go --workflow ci
+
+# Setup for coverage workflow - minimal tools
+setup-coverage:
+	@go run scripts/setup/main.go --workflow coverage
