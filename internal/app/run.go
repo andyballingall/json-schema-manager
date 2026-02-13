@@ -7,7 +7,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
 )
 
 // Run executes the application with the given arguments.

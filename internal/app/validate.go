@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/andyballingall/json-schema-manager/internal/schema"
+	"github.com/bitshepherds/json-schema-manager/internal/schema"
 )
 
 // NewValidateCmd creates a new validate command.

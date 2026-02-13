@@ -3,7 +3,7 @@ package app
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/andyballingall/json-schema-manager/internal/schema"
+	"github.com/bitshepherds/json-schema-manager/internal/schema"
 )
 
 // NewCreateSchemaCmd returns a new cobra command for creating a schema.

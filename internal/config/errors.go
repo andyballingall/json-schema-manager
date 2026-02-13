@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 
-	"github.com/andyballingall/json-schema-manager/internal/validator"
+	"github.com/bitshepherds/json-schema-manager/internal/validator"
 )
 
 // MustHaveExactlyOneProductionEnvironmentError is returned when the configuration doesn't have exactly one

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
 )
 
 // CLIGitter is the concrete implementation of Gitter using the git CLI.

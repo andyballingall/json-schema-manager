@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
-	"github.com/andyballingall/json-schema-manager/internal/schema"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/schema"
 )
 
 // NewCreateRegistryCmd returns a new cobra command for creating a registry.

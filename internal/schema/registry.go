@@ -9,9 +9,9 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
-	"github.com/andyballingall/json-schema-manager/internal/validator"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/validator"
 )
 
 // RootDirEnvVar is the environment variable used to set the registry root directory.

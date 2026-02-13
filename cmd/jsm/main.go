@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/andyballingall/json-schema-manager/internal/app"
+	"github.com/bitshepherds/json-schema-manager/internal/app"
 )
 
 func main() {

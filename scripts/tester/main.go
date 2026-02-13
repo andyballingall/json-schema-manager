@@ -211,7 +211,7 @@ func parseCoverageOutput(output []byte) (failures []string, totalLine string) {
 	// Function-level exclusions (Package:Function)
 	exclusions := map[string]float64{
 		// filepath.Abs() error path is unreachable on Darwin
-		"github.com/andyballingall/json-schema-manager/internal/fsh/path_resolver.go:27": 75.0,
+		"github.com/bitshepherds/json-schema-manager/internal/fsh/path_resolver.go:27": 75.0,
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))

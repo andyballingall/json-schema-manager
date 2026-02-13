@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/andyballingall/json-schema-manager/internal/schema"
+	"github.com/bitshepherds/json-schema-manager/internal/schema"
 )
 
 // JSONReporter implements schema.Reporter for JSON output.
