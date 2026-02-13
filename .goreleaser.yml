@@ -20,7 +20,7 @@ builds:
         goarch: arm64
     main: ./cmd/jsm/main.go
     ldflags:
-      - -s -w -X github.com/andyballingall/json-schema-manager/internal/app.Version={{.Version}}
+      - -s -w -X github.com/bitshepherds/json-schema-manager/internal/app.Version={{.Version}}
 
 archives:
   - formats: [tar.gz]
@@ -54,11 +54,11 @@ changelog:
 homebrew_casks:
   - name: jsm
     repository:
-      owner: andyballingall
+      owner: bitshepherds
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
-    homepage: "https://github.com/andyballingall/json-schema-manager"
+    homepage: "https://github.com/bitshepherds/json-schema-manager"
     description: "JSON Schema Manager (jsm) - Registry-first tool for managing and validating JSON schemas."
     binaries:
       - jsm

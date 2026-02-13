@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
 )
 
 const (

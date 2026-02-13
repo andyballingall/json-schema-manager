@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
-	"github.com/andyballingall/json-schema-manager/internal/validator"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/validator"
 )
 
 // mockValidator is a test implementation of validator.Validator.

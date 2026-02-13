@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
 )
 
 func TestCanonicalPath(t *testing.T) {

@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/repo"
-	"github.com/andyballingall/json-schema-manager/internal/report"
-	"github.com/andyballingall/json-schema-manager/internal/schema"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/repo"
+	"github.com/bitshepherds/json-schema-manager/internal/report"
+	"github.com/bitshepherds/json-schema-manager/internal/schema"
 )
 
 // Manager defines the business logic for JSON schema operations.

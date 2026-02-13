@@ -21,12 +21,12 @@
 
 TODO: Move JSM to bitshepherds.com and update this section.
 
-Download the latest binary for your platform from the [GitHub Releases](https://github.com/andyballingall/json-schema-manager/releases) page.
+Download the latest binary for your platform from the [GitHub Releases](https://github.com/bitshepherds/json-schema-manager/releases) page.
 
 Alternatively, if you have Go installed, you can install it directly:
 
 ```bash
-go install github.com/andyballingall/json-schema-manager/cmd/jsm@latest
+go install github.com/bitshepherds/json-schema-manager/cmd/jsm@latest
 ```
 
 TODO: After moving the project to bitshepherds update the section above.

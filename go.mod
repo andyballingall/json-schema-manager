@@ -1,4 +1,4 @@
-module github.com/andyballingall/json-schema-manager
+module github.com/bitshepherds/json-schema-manager
 
 go 1.25.5
 

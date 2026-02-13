@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
-	"github.com/andyballingall/json-schema-manager/internal/repo"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/repo"
 )
 
 // RegistryRootAtGitRootError is returned when the registry root is the same as the git root.

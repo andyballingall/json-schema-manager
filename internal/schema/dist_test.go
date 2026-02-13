@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/fsh"
-	"github.com/andyballingall/json-schema-manager/internal/repo"
-	"github.com/andyballingall/json-schema-manager/internal/validator"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/fsh"
+	"github.com/bitshepherds/json-schema-manager/internal/repo"
+	"github.com/bitshepherds/json-schema-manager/internal/validator"
 )
 
 // mockGitter is a test mock for the repo.Gitter interface.

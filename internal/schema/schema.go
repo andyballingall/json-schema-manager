@@ -11,8 +11,8 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/andyballingall/json-schema-manager/internal/config"
-	"github.com/andyballingall/json-schema-manager/internal/validator"
+	"github.com/bitshepherds/json-schema-manager/internal/config"
+	"github.com/bitshepherds/json-schema-manager/internal/validator"
 )
 
 // ID is the canonical ID of a JSON Schema.
